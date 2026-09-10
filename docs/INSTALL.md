@@ -60,7 +60,7 @@ Two things follow from this shape and cause most of the confusion during setup:
 | A **domain verified in your Entra tenant** | The Application ID URI must be an HTTPS URL on a domain you own and have verified. This is the single hardest requirement — see the warning below |
 | An Entra tenant admin who can register an app | You will create one app registration with a scope and a federated credential |
 | Reva policy store id, PDP URL, and a **v2** API token | From your Reva tenant. A v1 token will not work — see §7 |
-| Node.js 18+ hosting | AWS Lambda + API Gateway (this package) or Azure App Service |
+| Node.js 20+ hosting | AWS Lambda + API Gateway (this package) or Azure App Service |
 
 > **The verified-domain requirement kills the obvious shortcuts.** `ngrok`, `*.onrender.com`
 > and similar tunnels cannot be used as the Application ID URI: Entra refuses any HTTPS
@@ -73,7 +73,7 @@ Two things follow from this shape and cause most of the confusion during setup:
 
 ## 3. Deploy the service
 
-Requires **Node 18 or newer**. A default install has **no dependencies** — nothing to
+Requires **Node 20 or newer**. A default install has **no dependencies** — nothing to
 `npm install` unless you opt into DynamoDB storage.
 
 Only two routes need to be publicly reachable, because they are the two Microsoft calls:
@@ -100,7 +100,7 @@ That is the whole deployment. Put TLS in front of it — Copilot requires HTTPS 
 process deliberately does not terminate it, because that job belongs to the platform you
 are already running (App Service, an ingress controller, a load balancer).
 
-**Azure App Service specifics.** Publish as **Code**, runtime **Node 18+**, OS **Linux**.
+**Azure App Service specifics.** Publish as **Code**, runtime **Node 20+**, OS **Linux**.
 Set the variables under *Settings → Environment variables*. Bind your custom domain with a
 **CNAME** to the default hostname plus the **`asuid.<subdomain>` TXT record** Azure asks
 for, and wait for both to resolve before §4 — the Application ID URI cannot be set on an
@@ -127,7 +127,7 @@ own function and its own IAM role:
 | `POST /validate` | `validate` | `index.validate` |
 | `POST /analyze-tool-execution` | `analyzeToolExecution` | `index.analyzeToolExecution` |
 
-Zip the repository (or just `src/`), set the handler as above, runtime Node 18+. Route both
+Zip the repository (or just `src/`), set the handler as above, runtime Node 20+. Route both
 through API Gateway — HTTP API or REST API — preserving the `Authorization` and
 `x-ms-correlation-id` headers, and without rewriting the paths.
 
