@@ -57,13 +57,43 @@ test("callerAppIdOf reads appid (v1 tokens) and azp (v2 tokens)", () => {
   assert.equal(callerAppIdOf({ appid: "   " }), null);
 });
 
-test("with no allowlist, any app in the right tenant is accepted — and recorded", async () => {
-  // The deployed default. Deliberately permissive, because a guessed GUID is not a
-  // security control; the recorded id is how the allowlist gets populated from evidence.
-  const { auth, token } = authWith({ appid: OTHER_APP }, []);
+test("entra mode refuses to construct without an allowlist", () => {
+  // The failure this guards is silent: tenant and audience pass, the service answers
+  // normally, and nothing anywhere reports that the application check never ran. It has to
+  // be a startup error — a service already serving traffic unprotected has failed.
+  assert.throws(
+    () => createAuth({ mode: "entra", tenantId: TENANT, audience: AUDIENCE, allowedAppIds: [] }),
+    /ENTRA_ALLOWED_APP_IDS is required/
+  );
+  // Omitted entirely, not merely empty.
+  assert.throws(
+    () => createAuth({ mode: "entra", tenantId: TENANT, audience: AUDIENCE }),
+    /ENTRA_ALLOWED_APP_IDS is required/
+  );
+});
+
+test("the refusal tells the operator where to find the value", () => {
+  // A config error nobody can act on gets worked around instead of fixed. This one names
+  // the variable, where the id comes from, and the local-development alternative — without
+  // that last part someone reaches for ALLOW_INSECURE_LOCAL_AUTH in production to get past
+  // it, turning a good control into a worse outcome than not having it.
+  try {
+    createAuth({ mode: "entra", tenantId: TENANT, audience: AUDIENCE, allowedAppIds: [] });
+    assert.fail("expected a throw");
+  } catch (err) {
+    assert.match(err.message, /ENTRA_ALLOWED_APP_IDS/);
+    assert.match(err.message, /Application \(client\) ID/);
+    assert.match(err.message, /ALLOW_INSECURE_LOCAL_AUTH/);
+  }
+});
+
+test("the caller app id is still recorded, for confirming the configured value", async () => {
+  // Recording survives the allowlist becoming mandatory. It is no longer how the id is
+  // discovered — Power Platform federates into the customer's own registration, so the
+  // value is known from setup — but it is how an operator confirms the two match.
+  const { auth, token } = authWith({ appid: POWER_PLATFORM }, [POWER_PLATFORM]);
   const res = await auth.authenticateBearerToken(token);
-  assert.equal(res.ok, true);
-  assert.equal(res.callerAppId, OTHER_APP);
+  assert.equal(res.callerAppId, POWER_PLATFORM);
 });
 
 test("with an allowlist, the permitted app is accepted", async () => {
@@ -99,9 +129,22 @@ test("ENTRA_ALLOWED_APP_IDS parses a comma list, tolerating spacing and case", (
   assert.deepEqual(cfg.allowedAppIds, [POWER_PLATFORM, OTHER_APP]);
 });
 
-test("an unset allowlist is empty, not undefined — enforcement is off, not broken", () => {
+test("an unset allowlist parses to empty, and createAuth is what rejects it", () => {
+  // Split deliberately: buildAuthConfigFromEnv only reads the environment, so it stays a
+  // pure parse and returns []. The refusal lives in createAuth, which every mode goes
+  // through — including callers that build their config by hand rather than from env.
   const cfg = buildAuthConfigFromEnv({ ENTRA_TENANT_ID: TENANT, ENTRA_AUDIENCE: AUDIENCE });
   assert.deepEqual(cfg.allowedAppIds, []);
+  assert.throws(() => createAuth(cfg), /ENTRA_ALLOWED_APP_IDS is required/);
+});
+
+test("the whole env-to-auth path works when the allowlist is set", () => {
+  const cfg = buildAuthConfigFromEnv({
+    ENTRA_TENANT_ID: TENANT,
+    ENTRA_AUDIENCE: AUDIENCE,
+    ENTRA_ALLOWED_APP_IDS: POWER_PLATFORM
+  });
+  assert.doesNotThrow(() => createAuth(cfg));
 });
 
 // ── redaction ───────────────────────────────────────────────────────────────

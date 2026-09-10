@@ -220,9 +220,12 @@ Set it as `ENTRA_ALLOWED_APP_IDS` so only that application can drive the webhook
 observability event records the observed `callerAppId`, so you can confirm the two match
 before relying on it.
 
-Until you do, the endpoint accepts a token from **any** application in your tenant that can
-obtain one for your audience. Microsoft treats this as the provider's responsibility, not the
-platform's.
+**The service will not start without this.** Microsoft treats pinning the caller as the
+provider's responsibility rather than the platform's, and a token that proves only the
+tenant and the audience would let any application in your tenant drive tool authorization.
+Rather than warn about that at runtime, the process refuses to start and names the variable.
+You do not need a live call to find the value — it is on the app registration's overview
+page, above.
 
 ### 4.2 Federated identity credential
 

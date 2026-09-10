@@ -83,10 +83,12 @@ configuration variable is in **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)**.
 Three settings decide whether this is actually enforcing anything. All are covered in
 **[SECURITY.md](SECURITY.md)**; these are the ones people miss.
 
-**Set `ENTRA_ALLOWED_APP_IDS`.** Validating the token proves the right tenant and audience —
-not that Copilot Studio sent it. Without this, any application in your tenant that can get a
-token for your audience can drive the webhook. Microsoft treats this as the provider's job,
-and their own Defender integration enforces the same check.
+**`ENTRA_ALLOWED_APP_IDS` is required — the service will not start without it.** Validating
+the token proves the right tenant and audience, not that Copilot Studio sent it. Without
+this, any application in your tenant that can get a token for your audience could drive the
+webhook. Microsoft treats this as the provider's job, and their own Defender integration
+enforces the same check. The value is your Application (client) ID; local development
+without Entra uses `ALLOW_INSECURE_LOCAL_AUTH` instead.
 
 **Start in `REVA_MODE=monitor`.** Your policies have never met your real traffic. Monitor
 evaluates for real, records every would-be denial with the reason, and lets traffic through.
