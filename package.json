@@ -1,6 +1,6 @@
 {
   "name": "reva-copilot-threat-detection",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "External threat detection provider for Microsoft Copilot Studio. Authorizes every agent tool call at runtime against Reva policy. Runs in your own environment on Node or AWS Lambda, with zero runtime dependencies.",
   "license": "Apache-2.0",
   "type": "module",
