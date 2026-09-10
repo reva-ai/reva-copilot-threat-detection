@@ -7,8 +7,14 @@ npm test                                   # 152 tests, no network
 node scripts/check-no-real-identifiers.mjs # nothing real may land in a public repo
 ```
 
-Both run in CI, along with `npm audit` and a check that the package still has **zero**
-runtime dependencies.
+Both run in CI, along with `npm audit`, a check that the package still has **zero**
+runtime dependencies, and a [gitleaks](https://github.com/gitleaks/gitleaks) scan of the
+working tree *and* every commit.
+
+The two secret checks are not redundant. `check-no-real-identifiers.mjs` knows this
+project — internal hostnames, our own token shapes — and gitleaks knows the wider world's
+credential formats: GitHub PATs, Slack tokens, Azure client secrets, cloud API keys.
+Measured against synthetic credentials, each catches things the other misses.
 
 ## Two rules that are not negotiable
 
