@@ -542,21 +542,63 @@ test("a refused connection is NOT retried — the service is down, not flaky", a
 
 test("retrying never exceeds the single deadline shared by both attempts", async () => {
   // Microsoft fails OPEN past its own budget, so two attempts must not cost 2x timeoutMs.
-  const started = Date.now();
+  //
+  // Measured as a RATIO, not against a wall-clock constant. The earlier version had the
+  // first attempt fail instantly, which left correct behaviour (~80ms) and a per-attempt
+  // clock (~160ms) only 80ms apart, with the threshold at 140 — so it failed on a loaded
+  // CI runner whenever a timer fired late, and it said "the deadline is not shared" when
+  // the truth was "the runner was busy".
+  //
+  // Instead, burn most of the budget on attempt 1 and then measure how long attempt 2's
+  // own abort takes to fire. A shared deadline gives it only what is LEFT; a per-attempt
+  // clock gives it a full budget again. Comparing the second attempt against the budget it
+  // was supposed to inherit is robust to a slow runner, because runner slowness inflates
+  // both sides of the comparison.
+  const BUDGET_MS = 400;
+  const BURN_MS = 300;
+  const config = buildRevaPdpConfigFromEnv({
+    REVA_PDP_URL: "https://pdp.example/pdp/v2/ai/evaluation",
+    REVA_POLICY_STORE_ID: "store-1",
+    REVA_PDP_TOKEN: "tok",
+    REVA_PDP_TIMEOUT_MS: String(BUDGET_MS)
+  });
+
   let calls = 0;
+  let abortDelayMs = null;
   const restore = stubFetch(async (_u, init) => {
     calls += 1;
-    if (calls === 1) throw socketError("ECONNRESET");
+    if (calls === 1) {
+      // Spend most of the deadline before the socket dies, so "what is left" and "a fresh
+      // budget" are far apart rather than nearly identical.
+      await new Promise((r) => setTimeout(r, BURN_MS));
+      throw socketError("ECONNRESET");
+    }
+    const secondAttemptStartedAt = Date.now();
     return new Promise((_res, rej) => {
-      init.signal.addEventListener("abort", () => rej(Object.assign(new Error("aborted"), { name: "AbortError" })));
+      init.signal.addEventListener("abort", () => {
+        abortDelayMs = Date.now() - secondAttemptStartedAt;
+        rej(Object.assign(new Error("aborted"), { name: "AbortError" }));
+      });
     });
   });
+
   try {
-    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), {}, PDP_CONFIG, { principal: {} }, "cid");
-    const elapsed = Date.now() - started;
+    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), {}, config, { principal: {} }, "cid");
+
+    // Without this the test passes for the wrong reason: if retrying broke entirely, one
+    // attempt would also come in under any timing bound.
+    assert.equal(out.diagnostics.attempts, 2, "the socket error must actually have been retried");
+    assert.equal(out.diagnostics.retriedAfter, "ECONNRESET");
     assert.equal(out.diagnostics.errorKind, "timeout");
-    // PDP_CONFIG sets 80ms. A per-attempt clock would allow ~160ms.
-    assert.ok(elapsed < 140, `two attempts took ${elapsed}ms, which exceeds the shared budget`);
+
+    // Inherited remainder is ~100ms; a fresh budget would be 400ms. Anything below half the
+    // budget can only have come from a shared deadline, and leaves ~3x headroom over the
+    // correct value for a slow runner.
+    assert.ok(
+      abortDelayMs != null && abortDelayMs < BUDGET_MS / 2,
+      `attempt 2 was given ${abortDelayMs}ms; a shared deadline leaves only ~${BUDGET_MS - BURN_MS}ms, ` +
+        `so this looks like the retry restarted the clock`
+    );
   } finally {
     restore();
   }
