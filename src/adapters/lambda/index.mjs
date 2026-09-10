@@ -49,7 +49,6 @@ export async function observabilityHandlers() {
   return {
     page: lambdaHandler(obs.handleObservabilityPage),
     events: lambdaHandler(obs.handleObservabilityEvents),
-    eventsClear: lambdaHandler(obs.handleObservabilityEventsClear),
-    policy: lambdaHandler(obs.handleObservabilityPolicy)
+    eventsClear: lambdaHandler(obs.handleObservabilityEventsClear)
   };
 }

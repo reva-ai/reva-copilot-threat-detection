@@ -47,8 +47,7 @@ if (process.env.ENABLE_OBSERVABILITY === "true") {
   routes.push(
     { method: "GET", path: "/observability", handler: obs.handleObservabilityPage },
     { method: "GET", path: "/observability/events", handler: obs.handleObservabilityEvents },
-    { method: "DELETE", path: "/observability/events", handler: obs.handleObservabilityEventsClear },
-    { method: "GET", path: "/observability/policy", handler: obs.handleObservabilityPolicy }
+    { method: "DELETE", path: "/observability/events", handler: obs.handleObservabilityEventsClear }
   );
 }
 

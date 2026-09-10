@@ -21,11 +21,6 @@ export function buildObservabilityHtml(publicApiBase, obsMaxEvents, eventsStorag
       .allow { background: #dcfce7; color: #166534; }
       .block { background: #fee2e2; color: #991b1b; }
       .na { background: #e5e7eb; color: #374151; }
-      .policy-panel { border: 1px solid #d1d5db; border-radius: 10px; background: white; margin-top: 20px; overflow: hidden; }
-      .policy-head { padding: 10px 12px; border-bottom: 1px solid #e5e7eb; background: #f9fafb; font-size: 14px; }
-      .policy-head h2 { margin: 0 0 6px 0; font-size: 16px; }
-      .policy-meta { color: #6b7280; font-size: 13px; }
-      .policy-body { margin: 0; padding: 12px; overflow: auto; font-size: 12px; background: #111827; color: #f9fafb; }
       .status-line { margin: 12px 0; font-size: 14px; min-height: 20px; color: #374151; }
       .status-line.ok { color: #166534; }
       .status-line.err { color: #991b1b; }
@@ -42,13 +37,6 @@ export function buildObservabilityHtml(publicApiBase, obsMaxEvents, eventsStorag
     </div>
     <div class="status-line" id="otelStatus" aria-live="polite"></div>
     <div id="events"></div>
-    <div class="policy-panel">
-      <div class="policy-head">
-        <h2>Active policy</h2>
-        <div class="policy-meta" id="policyMeta">Loading…</div>
-      </div>
-      <pre class="policy-body" id="policy">{}</pre>
-    </div>
     <script>
       const API_BASE = ${JSON.stringify(base)};
       let auto = true;
@@ -59,15 +47,6 @@ export function buildObservabilityHtml(publicApiBase, obsMaxEvents, eventsStorag
         let b = API_BASE;
         while (b.endsWith("/")) b = b.slice(0, -1);
         return b + path;
-      }
-
-      function renderPolicy(payload) {
-        const meta = document.getElementById("policyMeta");
-        const pre = document.getElementById("policy");
-        const updated = payload.updatedAt || "-";
-        const api = payload.configApiEnabled ? "enabled" : "disabled";
-        meta.textContent = "Last updated: " + updated + " · Runtime config API: " + api;
-        pre.textContent = JSON.stringify(payload.config || {}, null, 2);
       }
 
       // The data routes require x-config-token. The page itself carries no data and stays
@@ -86,13 +65,6 @@ export function buildObservabilityHtml(publicApiBase, obsMaxEvents, eventsStorag
       }
 
       function forgetToken() { sessionToken = null; }
-
-      async function fetchPolicy() {
-        const response = await fetch(apiPath("/observability/policy"), { headers: authHeaders() });
-        if (response.status === 401) { forgetToken(); throw new Error("Unauthorized — check the config API token."); }
-        const payload = await response.json();
-        renderPolicy(payload);
-      }
 
       function render(events) {
         const root = document.getElementById("events");
@@ -129,7 +101,7 @@ export function buildObservabilityHtml(publicApiBase, obsMaxEvents, eventsStorag
       }
 
       async function refreshAll() {
-        await Promise.all([fetchEvents(), fetchPolicy()]);
+        await fetchEvents();
       }
 
       async function clearEvents() {

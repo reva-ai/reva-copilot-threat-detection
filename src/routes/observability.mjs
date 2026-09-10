@@ -11,8 +11,6 @@
 import {
   listObservabilityEvents,
   clearObservabilityEvents,
-  getPolicyConfig,
-  sanitizePolicyConfig,
   getObsMaxEvents
 } from "../storage/index.mjs";
 import { requireConfigApiAuth } from "../core/config-token.mjs";
@@ -41,20 +39,4 @@ export const handleObservabilityEventsClear = async (req) => {
   if (denied) return withCorrelation(headers, denied);
   await clearObservabilityEvents();
   return withCorrelation(headers, jsonResponse(200, { cleared: true }));
-};
-
-export const handleObservabilityPolicy = async (req) => {
-  const headers = req.headers || {};
-  if ((req.method || "GET") !== "GET") return withCorrelation(headers, methodNotAllowed());
-  const denied = requireConfigApiAuth(headers);
-  if (denied) return withCorrelation(headers, denied);
-  const row = await getPolicyConfig();
-  return withCorrelation(
-    headers,
-    jsonResponse(200, {
-      config: await sanitizePolicyConfig(row),
-      updatedAt: row.updatedAt,
-      configApiEnabled: Boolean((process.env.CONFIG_API_TOKEN || "").trim())
-    })
-  );
 };

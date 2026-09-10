@@ -319,8 +319,7 @@ PUBLIC_API_BASE=              # only if the dashboard is not same-origin
 Neither is mounted unless enabled — a request to them returns `404`. A deployment that never
 turns them on has no such surface to protect.
 
-When enabled, the **data** routes (`/observability/events`, `/observability/policy`,
-`/config/policy`) require an `x-config-token` header matching `CONFIG_API_TOKEN`, and are
+When enabled, the **data** routes (`/observability/events`, `/config/policy`) require an `x-config-token` header matching `CONFIG_API_TOKEN`, and are
 **disabled outright** when it is unset. Forgetting to configure a token gives you a dark
 dashboard, not an open one. The `/observability` page itself is reachable without a header —
 a browser cannot set one on a navigation — and is safe because it carries no data; it prompts

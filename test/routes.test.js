@@ -157,8 +157,7 @@ test("an unauthenticated call is refused", async () => {
 
 const OBS = [
   ["handleObservabilityEvents", "GET"],
-  ["handleObservabilityEventsClear", "DELETE"],
-  ["handleObservabilityPolicy", "GET"]
+  ["handleObservabilityEventsClear", "DELETE"]
 ];
 
 /**
