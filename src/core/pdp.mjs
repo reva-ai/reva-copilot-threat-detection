@@ -690,10 +690,50 @@ export async function evaluateViaRevaPdp(payload, computedFlags, pdpConfig, auth
       response.ok || (response.status === 403 && firstResult?.error_type === "POLICY_DENIED");
 
     if (!isPolicyDecision) {
-      const reason = extractPdpReasonText(firstResult);
-      diagnostics.error = reason ? `HTTP ${response.status}: ${reason}` : `HTTP ${response.status}`;
-      diagnostics.errorKind =
-        response.status === 401 ? "auth" : response.status < 500 ? "invalid-payload" : "protocol";
+      // The PDP answers JSON on every status it owns — allow, deny, and the rejections it
+      // issues for a payload it dislikes. A NON-JSON error body therefore did not come from
+      // the PDP at all: something in front of it answered instead, and the request never
+      // arrived.
+      //
+      // Observed in a real deployment: an AWS WAF on the CDN in front of the PDP answers
+      // with the CDN's own error page —
+      //   403  text/html  "403 ERROR ... The request could not be satisfied. Request blocked."
+      // carrying `x-cache: Error from cloudfront` and NO `x-amzn-requestid`, i.e. it never
+      // reached the gateway — for any body matching its SQLi/XSS/LFI signatures inside the
+      // first ~16 KB. `<script>`, `' OR 1=1 --` and `../../../../etc/passwd` each trip it;
+      // the same strings past 16 KB do not, so the block is also position-dependent.
+      //
+      // That is not an edge case for this service, it is the normal case: the payload we
+      // forward is attacker-controlled BY DESIGN — user prompts, tool outputs, fetched
+      // documents — so content-pattern rules on this path fire on precisely the traffic the
+      // guardrails exist to score. Calling it "invalid-payload" blames our own request
+      // builder and sends whoever is on the pager to the wrong team, so an upstream block
+      // gets a kind of its own that names the intermediary.
+      // 401 is excluded on purpose, whatever the body looks like. No content-matching WAF
+      // rule answers 401, and per this project's notes the usual cause is a token scoped to
+      // the wrong path family or host — "check the credentials" stays the right instruction
+      // even if some intermediary is the one saying it. A genuine PDP 401 is JSON
+      // ({"error":"Unauthorized","status":401,...}), so in practice
+      // the two rules do not overlap; this ordering just makes the tie-break deliberate.
+      const upstreamBlocked =
+        response.status !== 401 &&
+        parsed === null &&
+        bodyText.trim() !== "" &&
+        bodyText !== "<unreadable>";
+
+      if (upstreamBlocked) {
+        const contentType = response.headers.get("content-type") || "no content-type";
+        const server = response.headers.get("server");
+        diagnostics.error =
+          `HTTP ${response.status}: blocked before reaching the PDP — non-JSON body ` +
+          `(${contentType}${server ? `, server: ${server}` : ""})`;
+        diagnostics.errorKind = "upstream-blocked";
+      } else {
+        const reason = extractPdpReasonText(firstResult);
+        diagnostics.error = reason ? `HTTP ${response.status}: ${reason}` : `HTTP ${response.status}`;
+        diagnostics.errorKind =
+          response.status === 401 ? "auth" : response.status < 500 ? "invalid-payload" : "protocol";
+      }
       // Recorded so the observability event shows what the PDP actually said, even though
       // we are deliberately not treating it as a decision.
       diagnostics.rawDecision = decisionField ?? null;

@@ -564,11 +564,96 @@ test("retrying never exceeds the single deadline shared by both attempts", async
 
 test("a 401 with no decision is an auth fault, not a deny", async () => {
   // A v1 token against v2 lands here. It must not read as "blocked by policy".
-  const restore = stubFetch(async () => new Response("unauthorized", { status: 401 }));
+  // Body shape copied from a real deployment's 401 — it is JSON, not prose.
+  const body = JSON.stringify({
+    path: "/pdp/access/v1/ai/evaluation",
+    error: "Unauthorized",
+    timestamp: "2026-09-10T15:23:49.682341615Z",
+    status: 401
+  });
+  const restore = stubFetch(async () => new Response(body, { status: 401 }));
   try {
     const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), {}, PDP_CONFIG, { principal: {} }, "cid");
     assert.equal(out.ok, false);
     assert.equal(out.diagnostics.errorKind, "auth");
+  } finally {
+    restore();
+  }
+});
+
+// ── blocked before the PDP ever saw it ──────────────────────────────────────
+//
+// The payload this service forwards is attacker-controlled by design, so a WAF with
+// SQLi/XSS/LFI rules in front of the PDP fires on exactly the traffic the guardrails exist
+// to score. Confirmed against a real deployment: the CDN answers 403 text/html for
+// `<script>`, `' OR 1=1 --` and `../../../../etc/passwd` in the body. Reporting that as our
+// own payload being malformed points the investigation at the wrong system entirely.
+
+/** The CDN error page, as actually returned by the edge in front of the PDP. */
+const CLOUDFRONT_403 =
+  "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\">\n<HTML><HEAD>" +
+  "<TITLE>403 ERROR</TITLE></HEAD>\n<BODY>\n<H1>403 ERROR</H1>\n" +
+  "<H2>The request could not be satisfied.</H2>\n<HR>Request blocked.\n" +
+  "We can't connect to the server for this app or website at this time.\n</BODY></HTML>";
+
+test("a non-JSON error body is an upstream block, not a malformed payload", async () => {
+  const restore = stubFetch(
+    async () =>
+      new Response(CLOUDFRONT_403, {
+        status: 403,
+        headers: { "content-type": "text/html", server: "CloudFront" }
+      })
+  );
+  try {
+    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), {}, PDP_CONFIG, { principal: {} }, "cid");
+    assert.equal(out.ok, false, "still fail-closed — an unanswered question is not an allow");
+    assert.equal(out.diagnostics.errorKind, "upstream-blocked");
+    assert.match(out.diagnostics.error, /blocked before reaching the PDP/);
+    // The two facts that identify the culprit must survive into the event log.
+    assert.match(out.diagnostics.error, /text\/html/);
+    assert.match(out.diagnostics.error, /CloudFront/);
+  } finally {
+    restore();
+  }
+});
+
+test("a JSON 403 the PDP itself rejected is still invalid-payload", async () => {
+  // The regression guard for the change above: an upstream block and a PDP-side rejection
+  // are both 403 with no POLICY_DENIED, and only the body shape tells them apart.
+  const restore = stubFetch(
+    async () =>
+      new Response(JSON.stringify([{ decision: false, context: { reason: "requires a Tool resource" } }]), {
+        status: 403,
+        headers: { "content-type": "application/json" }
+      })
+  );
+  try {
+    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), {}, PDP_CONFIG, { principal: {} }, "cid");
+    assert.equal(out.ok, false);
+    assert.equal(out.diagnostics.errorKind, "invalid-payload");
+  } finally {
+    restore();
+  }
+});
+
+test("a 401 stays an auth fault even when the body is not JSON", async () => {
+  // Deliberate tie-break: no content-matching WAF rule answers 401, and the usual cause
+  // here is a token scoped to the wrong path family. "Check the credentials" wins.
+  const restore = stubFetch(async () => new Response("unauthorized", { status: 401 }));
+  try {
+    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), {}, PDP_CONFIG, { principal: {} }, "cid");
+    assert.equal(out.diagnostics.errorKind, "auth");
+  } finally {
+    restore();
+  }
+});
+
+test("an empty error body is not mistaken for an upstream block", async () => {
+  // 502/503 with no body is a gateway fault, which already has a kind.
+  const restore = stubFetch(async () => new Response("", { status: 503 }));
+  try {
+    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), {}, PDP_CONFIG, { principal: {} }, "cid");
+    assert.equal(out.diagnostics.errorKind, "protocol");
   } finally {
     restore();
   }

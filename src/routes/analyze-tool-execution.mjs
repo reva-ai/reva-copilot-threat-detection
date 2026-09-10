@@ -49,12 +49,19 @@ const COPILOT_BUDGET_MS = 1000;
  * has to point at a different place to look, which is the entire reason these are not one
  * message: "invalid-payload" means the PDP answered and rejected what we sent — a bug on
  * this side — while "transport" means it never answered at all.
+ *
+ * "upstream-blocked" is the third case and it is neither: the PDP was never asked, because a
+ * CDN or WAF in front of it refused the request. It reads differently on purpose. The fix is
+ * an exemption in someone else's infrastructure config, not a change here, and the message
+ * has to say so or the time goes into the request builder instead.
  */
 const FAILURE_DETAIL = {
   "no-principal": "this request does not identify the end user",
   timeout: "the authorization service did not respond in time",
   auth: "the authorization service rejected our credentials",
   "invalid-payload": "the authorization service rejected this request as malformed",
+  "upstream-blocked":
+    "a CDN or WAF in front of the authorization service blocked this request before it arrived",
   transport: "the authorization service could not be reached"
 };
 
