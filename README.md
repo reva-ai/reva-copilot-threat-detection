@@ -41,7 +41,7 @@ call it, and there is no tenant-wide switch.
 Requires **Node 18+** and nothing else — no runtime dependencies.
 
 ```bash
-git clone https://github.com/reva-ai/reva-copilot-threat-detection.git
+git clone https://github.com/avprevai/reva-copilot-threat-detection.git
 cd reva-copilot-threat-detection
 npm test        # 144 tests, no network needed
 
