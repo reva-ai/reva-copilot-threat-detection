@@ -56,8 +56,7 @@ export function buildObservabilityHtml(publicApiBase, obsMaxEvents, eventsStorag
       function authHeaders() {
         if (!sessionToken) {
           const entered = prompt(
-            "Enter the config API token (x-config-token) to view observability data.\n" +
-            "It is held for this tab only and is never stored."
+            "Enter the config API token (x-config-token). Held for this tab only, never stored."
           );
           sessionToken = entered == null ? "" : String(entered).trim();
         }
