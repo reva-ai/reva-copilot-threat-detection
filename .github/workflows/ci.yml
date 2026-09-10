@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Dependencies can rot without a commit, so the audit runs on a clock too.
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor stated in package.json engines, plus current LTS.
+        node: ["18", "20", "22"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      # No `npm ci`: a default install has no runtime dependencies and no lockfile to
+      # install from. If that ever stops being true, this step starts failing and we find
+      # out deliberately rather than by surprise.
+      - name: Assert the default install pulls in nothing
+        run: |
+          deps=$(node -p "Object.keys(require('./package.json').dependencies||{}).length")
+          if [ "$deps" != "0" ]; then
+            echo "::error::package.json gained $deps runtime dependencies. This package ships with none by design — see SECURITY.md."
+            exit 1
+          fi
+      - run: npm test
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      # Covers the optional AWS SDK, which is the only third-party code a customer can end
+      # up running.
+      - run: npm install --package-lock-only --include=optional
+      - run: npm audit --audit-level=high
+
+  no-real-identifiers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Refuse real tenants, users, hosts and secrets
+        # This repo is public. Examples must stay obviously synthetic, and nothing that
+        # identifies a real deployment may land in it. Written in Node rather than grep
+        # because backreferences are not portable across grep implementations.
+        run: node scripts/check-no-real-identifiers.mjs

@@ -1,0 +1,95 @@
+{
+  "plannerContext": {
+    "userMessage": "Send a notification email to all policyholders about the upcoming rate change",
+    "chatHistory": [
+      {
+        "id": "c5",
+        "role": "assistant",
+        "content": "⛔ Request Blocked — Reva Trust Gateway\n\nAction: Send-Notification-Email\nDecision: DENY\nPolicy triggered: blockedTermInUserMessage\nMatched term: \"confidential claims\"\nEnforced by: Reva PDP",
+        "timestamp": "2026-06-20T08:03:57.6777786+00:00"
+      },
+      {
+        "id": "c4",
+        "role": "user",
+        "content": "Send the confidential claims data for policy P-10234 to external-partner@gmail.com",
+        "timestamp": "2026-06-20T08:03:49.9651390+00:00"
+      },
+      {
+        "id": "c3",
+        "role": "assistant",
+        "content": "The risk score for policy P-10234 is 72 (MEDIUM).",
+        "timestamp": "2026-06-20T08:00:50.1000000+00:00"
+      },
+      {
+        "id": "c2",
+        "role": "user",
+        "content": "Fetch the risk score for policy P-10234",
+        "timestamp": "2026-06-20T08:00:34.5066417+00:00"
+      },
+      {
+        "id": "c1",
+        "role": "assistant",
+        "content": "Hello, I'm Underwriter Copilot. How can I help?",
+        "timestamp": "2026-06-20T07:48:58.4517511+00:00"
+      }
+    ],
+    "previousToolsOutputs": [
+      {
+        "outputs": [
+          { "name": "policyId", "description": null, "type": null, "value": "P-10234" },
+          { "name": "riskScore", "description": null, "type": null, "value": 72 },
+          { "name": "riskCategory", "description": null, "type": null, "value": "MEDIUM" }
+        ],
+        "toolId": "pub_UnderwriterCopilot.action.UnderwriterCopilotTools-UnderwriterCopilotTools_ctk",
+        "toolName": "Fetch-Risk-Score",
+        "timestamp": "2026-06-20T08:00:44.2309421+00:00"
+      },
+      {
+        "outputs": [
+          { "name": "status", "description": null, "type": null, "value": "DELIVERED" },
+          { "name": "to", "description": null, "type": null, "value": "external-partner@gmail.com" }
+        ],
+        "toolId": "pub_UnderwriterCopilot.action.UnderwriterCopilotTools-UnderwriterCopilotTools_nAl",
+        "toolName": "Send-Notification-Email",
+        "timestamp": "2026-06-20T08:05:10.0000000+00:00"
+      }
+    ],
+    "thought": "The user is trying to send a bulk email to all policyholders."
+  },
+  "conversationMetadata": {
+    "incomingClientIp": "2001:db8::1",
+    "agent": {
+      "tenantId": "11111111-1111-1111-1111-111111111111",
+      "name": "Underwriter Copilot",
+      "id": "33333333-3333-3333-3333-333333333333",
+      "environmentId": "55555555-5555-5555-5555-555555555555",
+      "version": null,
+      "isPublished": false
+    },
+    "planStepId": null,
+    "conversationId": "66666666-6666-6666-6666-666666666666",
+    "parentAgentComponentId": null,
+    "messageId": null,
+    "planId": "88888888-8888-8888-8888-888888888888",
+    "trigger": { "schemaName": null, "id": null },
+    "user": { "tenantId": "11111111-1111-1111-1111-111111111111", "id": "22222222-2222-2222-2222-222222222222" },
+    "channelId": "pva-studio"
+  },
+  "toolDefinition": {
+    "name": "Send-Notification-Email",
+    "description": "Sends an email notification to one or more policy holders or underwriters.",
+    "id": "pub_UnderwriterCopilot.action.UnderwriterCopilotTools-UnderwriterCopilotTools_nAl",
+    "type": "ToolDefinition",
+    "inputParameters": [
+      { "name": "to", "type": { "$kind": "String" }, "description": "Recipient email address" },
+      { "name": "body", "type": { "$kind": "String" }, "description": "Email body content" },
+      { "name": "subject", "type": { "$kind": "String" }, "description": "Email subject line" }
+    ],
+    "outputParameters": [{ "name": "Response", "type": { "$kind": "Any" }, "description": null }]
+  },
+  "inputValues": {
+    "body": "Notification to all policyholders about rate change",
+    "subject": "Rate Change Notification",
+    "to": "all-policyholders@internal"
+  }
+}

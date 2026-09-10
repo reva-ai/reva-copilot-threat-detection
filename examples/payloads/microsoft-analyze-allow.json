@@ -1,0 +1,43 @@
+{
+  "plannerContext": {
+    "userMessage": "What is my balance?",
+    "chatHistory": [
+      {
+        "id": "m1",
+        "role": "user",
+        "content": "What is my balance?",
+        "timestamp": "2026-05-02T10:00:00Z"
+      }
+    ],
+    "previousToolOutputs": []
+  },
+  "toolDefinition": {
+    "id": "tool-lookup-balance",
+    "type": "CustomConnectorToolDefinition",
+    "name": "Lookup balance",
+    "description": "Reads account balance.",
+    "inputParameters": [
+      {
+        "name": "accountId",
+        "type": { "$kind": "String" },
+        "description": "Account id"
+      }
+    ],
+    "outputParameters": []
+  },
+  "inputValues": {
+    "accountId": "123"
+  },
+  "conversationMetadata": {
+    "agent": {
+      "id": "agent-guid",
+      "tenantId": "tenant-guid",
+      "environmentId": "env-guid",
+      "isPublished": true
+    },
+    "user": { "id": "user-guid", "tenantId": "tenant-guid" },
+    "conversationId": "conv-1",
+    "planId": "plan-1",
+    "planStepId": "step-1"
+  }
+}

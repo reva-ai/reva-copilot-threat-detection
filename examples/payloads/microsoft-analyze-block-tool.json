@@ -1,0 +1,54 @@
+{
+  "plannerContext": {
+    "userMessage": "Send a notification email to test@example.com",
+    "chatHistory": [],
+    "previousToolOutputs": []
+  },
+  "toolDefinition": {
+    "id": "tool-email",
+    "type": "ToolDefinition",
+    "name": "Send-Notification-Email",
+    "description": "Sends an email notification.",
+    "inputParameters": [
+      {
+        "name": "to",
+        "type": { "$kind": "String" },
+        "description": "Recipient"
+      },
+      {
+        "name": "subject",
+        "type": { "$kind": "String" },
+        "description": "Subject"
+      },
+      {
+        "name": "body",
+        "type": { "$kind": "String" },
+        "description": "Body"
+      }
+    ],
+    "outputParameters": [
+      {
+        "name": "Response",
+        "type": { "$kind": "Any" },
+        "description": null
+      }
+    ]
+  },
+  "inputValues": {
+    "to": "test@example.com",
+    "subject": "Test",
+    "body": "Hello"
+  },
+  "conversationMetadata": {
+    "agent": {
+      "id": "agent-guid",
+      "tenantId": "tenant-guid",
+      "environmentId": "env-guid",
+      "isPublished": true
+    },
+    "user": { "id": "user-guid", "tenantId": "tenant-guid" },
+    "conversationId": "conv-1",
+    "planId": "plan-1",
+    "planStepId": "step-1"
+  }
+}
