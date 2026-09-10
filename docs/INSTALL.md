@@ -64,35 +64,79 @@ Two things follow from this shape and cause most of the confusion during setup:
 
 ## 3. Deploy the service
 
-### Option A — AWS Lambda + API Gateway (this package)
+Requires **Node 18 or newer**. A default install has **no dependencies** — nothing to
+`npm install` unless you opt into DynamoDB storage.
+
+Only two routes need to be publicly reachable, because they are the two Microsoft calls:
+
+| Route | Public |
+|---|---|
+| `POST /validate` | yes |
+| `POST /analyze-tool-execution` | yes |
+
+Everything else is off unless you switch it on, and returns `404` while off.
+
+### Option A — any Node host (recommended)
+
+Azure App Service, Azure Container Apps, ECS or Fargate, Kubernetes, a VM, on-prem:
 
 ```bash
-./build.sh
+git clone https://github.com/reva-ai/reva-copilot-threat-detection.git
+cd reva-copilot-threat-detection
+npm test          # 144 tests, no network required
+npm start         # listens on $PORT, default 8080
 ```
 
-That produces one zip per route in `dist/`. Each contains `index.mjs`, `shared/` and
-`node_modules/`; the Lambda handler is `index.handler` on Node.js 18+ or 24.x.
+That is the whole deployment. Put TLS in front of it — Copilot requires HTTPS and this
+process deliberately does not terminate it, because that job belongs to the platform you
+are already running (App Service, an ingress controller, a load balancer).
 
-Create one Lambda per zip and route them through API Gateway (HTTP API):
+**Azure App Service specifics.** Publish as **Code**, runtime **Node 18+**, OS **Linux**.
+Set the variables under *Settings → Environment variables*. Bind your custom domain with a
+**CNAME** to the default hostname plus the **`asuid.<subdomain>` TXT record** Azure asks
+for, and wait for both to resolve before §4 — the Application ID URI cannot be set on an
+unverified domain.
 
-| Route | Zip | Public |
+**Containers.** There is no Dockerfile in this repo on purpose: a three-line one built on
+whichever `node:` base image your organisation has already approved is better than one we
+pick for you.
+
+```dockerfile
+FROM node:22-alpine
+WORKDIR /app
+COPY . .
+CMD ["node", "src/adapters/node/server.mjs"]
+```
+
+### Option B — AWS Lambda
+
+`src/adapters/lambda/index.mjs` exports one handler per route, so each can sit behind its
+own function and its own IAM role:
+
+| Route | Export | Lambda handler |
 |---|---|---|
-| `POST /validate` | `validate.zip` | yes — Microsoft calls it |
-| `POST /analyze-tool-execution` | `analyze-tool-execution.zip` | yes — Microsoft calls it |
-| `GET /observability` + `/observability/events`, `/observability/policy` | matching zips | **no — restrict these** |
-| `GET`/`PUT /config/policy` | `config-policy-*.zip` | no |
+| `POST /validate` | `validate` | `index.validate` |
+| `POST /analyze-tool-execution` | `analyzeToolExecution` | `index.analyzeToolExecution` |
 
-All Lambdas share one DynamoDB table (`DYNAMODB_TABLE_NAME`) for the policy row and the
-event log. See `envars.md` for the full per-Lambda variable list.
+Zip the repository (or just `src/`), set the handler as above, runtime Node 18+. Route both
+through API Gateway — HTTP API or REST API — preserving the `Authorization` and
+`x-ms-correlation-id` headers, and without rewriting the paths.
 
-### Option B — Azure App Service
+On Lambda you will usually want `STORAGE_BACKEND=dynamodb`, since in-memory storage is
+per-container and containers come and go. That is the one case needing
+`npm install @aws-sdk/client-dynamodb @aws-sdk/lib-dynamodb`.
 
-Publish as **Code**, runtime **Node 18+**, OS **Linux**. Set the variables from `envars.md`
-under *Settings → Environment variables*.
+### Option C — something else
 
-Bind your custom domain: a **CNAME** from your subdomain to the default hostname, plus the
-**`asuid.<subdomain>` TXT record** Azure asks for. Wait for both to resolve before §4 — the
-Application ID URI cannot be set on an unverified domain.
+Routes are plain functions:
+
+```js
+async function handleX(request) -> { statusCode, headers, body }
+// request: { method, path, headers, body /* raw string */ }
+```
+
+An adapter translates your host's request into that shape and the response back out, with
+no logic of its own. Both shipped adapters are about thirty lines; see `src/adapters/`.
 
 ### Either way: outbound network access
 
@@ -231,17 +275,24 @@ Minimum for a Copilot + Reva deployment:
 ENTRA_TENANT_ID=<your tenant guid>
 ENTRA_AUDIENCE=https://threatdetection.yourcompany.com   # MUST equal the Application ID URI
 
+# Only this application may call us (see §4.1a)
+ENTRA_ALLOWED_APP_IDS=<Application (client) ID>
+
 # Where we send the authorization question (Reva)
-REVA_PDP_URL=https://api.<env>.reva.ai/pdp/v2/ai/evaluation
+REVA_PDP_URL=https://api.<your-env>.reva.ai/pdp/v2/ai/evaluation
 REVA_POLICY_STORE_ID=<policy store uuid>
 REVA_PDP_TOKEN=<v2 api token>
-
-# Storage
-DYNAMODB_TABLE_NAME=<table>
 ```
+
+That is the whole required set. Storage defaults to in-memory and needs no configuration;
+add `STORAGE_BACKEND=dynamodb` only if you need events to outlive a restart or be shared
+across instances.
 
 `ENTRA_AUDIENCE` must be byte-identical to the Application ID URI from §4.1. This is the
 most common misconfiguration.
+
+Every remaining variable, with its default, is in
+[CONFIGURATION.md](CONFIGURATION.md).
 
 ### Map your entities (optional)
 
@@ -266,7 +317,7 @@ schema's own `timestamp` and `sourceIp` — so a rule can
 test the circumstances rather than name an entity. Add `REVA_USER_GROUPS_MAP` to also declare
 each user's `UserGroup` parents with the request, which lets a policy say
 `principal in UserGroup::"Underwriters"` without registering anyone. Both are covered in
-`envars.md` under *Writing open policies*.
+[CONFIGURATION.md](CONFIGURATION.md) under *What the policy can decide on*.
 
 ```bash
 REVA_PRINCIPAL_ID_MAP={"<entra-user-guid>":"<reva-user-id>"}
@@ -295,9 +346,9 @@ appears on the observability event as `monitorWouldDeny`, with the PDP's own rea
 Switch to `REVA_MODE=enforce` (the default) once that list is empty of surprises.
 
 Monitor mode relaxes only a real policy **deny**. A PDP fault still fails closed — see
-`REVA_FAIL_OPEN` in `envars.md`.
+`REVA_FAIL_OPEN` in [CONFIGURATION.md](CONFIGURATION.md).
 
-`envars.md` documents every remaining variable, including timeouts, fail-open, retry and
+[CONFIGURATION.md](CONFIGURATION.md) documents every remaining variable, including timeouts, fail-open, retry and
 history bounds.
 
 ---
@@ -366,9 +417,20 @@ az account get-access-token --resource "https://threatdetection.yourcompany.com"
 ### 8.2 A tool call is evaluated
 
 ```bash
-npm test                      # 80 unit tests, no network needed
-npm run local:fixture:allow   # drives the handler with a real Microsoft payload
+npm test    # 144 tests, no network needed
 ```
+
+To drive the running service with a Microsoft-shaped payload, post one of the bundled
+examples at it:
+
+```bash
+curl -sS -X POST "http://localhost:8080/analyze-tool-execution?api-version=2025-05-01" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  --data @examples/payloads/microsoft-analyze-allow.json
+```
+
+Expect `{"blockAction": false}` or a block with a reason. `examples/payloads/` also contains
+a blocked-tool case and a multi-turn conversation.
 
 ### 8.3 End to end in Copilot Studio
 
@@ -399,46 +461,20 @@ behaviour from this side.
 
 ## 9. Troubleshooting
 
-| Symptom | Cause | Fix |
-|---|---|---|
-| `AADSTS650057` — invalid resource, empty valid-resource list | The CLI is not authorized to request a token for your API | §4.1 step 3: add client `04b07795-8ddb-461a-bbee-02f9e1bf7b46` with `access_as_user` |
-| `AADSTS700213` — no matching federated identity record | The asserted subject differs from the one you registered | Base64url-decode the subject in the error; create a credential for exactly that string. Wait 2–5 min. Delete-and-recreate rather than edit |
-| `AADSTS500011` — resource principal not found in tenant | Application ID URI does not match the endpoint Power Platform requested, or is not on a verified domain | Set the Application ID URI to the exact base URL from §6, on a verified domain, and set `ENTRA_AUDIENCE` to the same string |
-| `ExternalServiceTokenAcquisitionError` on Save | Entra could not issue a token at all | Work through the three rows above in order |
-| `ExternalServiceTimeoutError`, or ~4s responses | Outbound 443 to `login.microsoftonline.com` blocked, or cold start | Open egress (§3). JWKS is cached for 5 minutes after the first success |
-| Every tool call blocked, reasonCode **103** | The service could not reach, authenticate to, or satisfy the Reva PDP | Read `errorKind` on the observability event: `transport` / `timeout` → check `REVA_PDP_URL` and egress; `auth` → the token is not a **v2** token (§7); `invalid-payload` → the PDP rejected the request body, and its own reason is on the event |
-| One chat blocks every call from some point on, while other chats are fine | A prior turn in `session.messages` has no captured answer. The PDP answers `400 invalid session: session.messages[N].response…is required`, and that 400 carries `decision:false` | Current builds drop unanswered turns before sending, and classify a 400 as `invalid-payload` rather than a policy deny. Deploy the current build |
-| PDP `401` | v1 token against the v2 endpoint | Issue a v2 token |
-| PDP `403` *"requires a Tool resource, resolved …"* or *"requires action invokeTool"* | The entity **type** or the **action** is not what the schema pairs. Ids are free-form; types and actions are not | Fix the type/action pairing. This is not a policy decision, despite the 403 — the reason text is on the observability event |
-| `400 managed context records are not supported at managed context.<key>` | A record was added to `context` outside the API's allowlist | Records are allowed only for `conversation`, `hops`, `chatHistory`, `environment` and `onBehalfOf`. Everything else must be a flat scalar or a scalar array. The error names the offending key |
-| A Cedar policy publishes but never fires | Context attribute name mismatch | Cedar matches keys exactly and a missing key is not an error — it fails the `has` guard. Check `REVA_CONTEXT_ATTR_PREFIX` against your store |
-| No `/analyze-tool-execution` events at all | The agent never called a tool, or it is not a generative agent with generative orchestration | §8.3 |
-| `400 Request body must include inputParameters` | An older build; Copilot sends `inputValues` and `previousToolsOutputs` | Deploy the current build, which accepts both spellings |
-| Blocked-term policies fire on the agent's own refusal text | Prior block messages being fed back as history | Current builds replace them with a neutral marker; deploy the current build |
+Entra errors, PDP errors, and what to read off an observability event when something is
+wrong: **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)**.
 
----
+## 10. Before go-live
 
-## 10. Security checklist before go-live
+The hardening checklist lives with the rest of the security posture in
+**[../SECURITY.md](../SECURITY.md)** — one copy, so it cannot drift out of step with the
+code.
 
-- [ ] `ENTRA_ALLOWED_APP_IDS` is set. Without it, any application in your tenant that can get
-      a token for your audience can drive this webhook — validating the token proves the
-      tenant and the audience, not the caller. Read `callerAppId` off an observability event
-      after one real tool call, then pin it.
-- [ ] `CONFIG_API_TOKEN` is set, so the observability data routes are enabled *and* protected.
-      Unset, they are disabled; set, they require `x-config-token`. Restrict them at the
-      gateway as well — defence in depth, not instead of.
-- [ ] `OBS_STORE_PROMPTS` is unset or `false`, so conversation content is not retained. Turn it
-      on only for a debugging session, and remember the store then holds personal data.
-- [ ] `ALLOW_INSECURE_LOCAL_AUTH` is unset in production.
-- [ ] `CONFIG_API_TOKEN` is a strong random value, stored as a secret.
-- [ ] `REVA_PDP_TOKEN` is stored in a secret manager (Key Vault / Secrets Manager), not in
-      plaintext app settings, and has a rotation owner.
-- [ ] `REVA_FAIL_OPEN` is unset or `false`.
-- [ ] `REVA_MODE` is unset or `enforce` — a service left in `monitor` records denials and
-      permits every one of them.
-- [ ] `entityResolution.user` on recent events begins `conversation-metadata:`. Anything else
-      means the end user was absent from the payload and the transport identity stood in.
-- [ ] On a **named-entity** policy store, all three id maps are populated and no recent
-      event shows an `entityResolution` beginning `slug:`. (Not needed for open policies.)
-- [ ] The Power Platform error behavior matches your intended posture (§6).
-- [ ] Someone owns the Reva decision log — it is the only place guardrail verdicts appear.
+Three that catch people out:
+
+- **`ENTRA_ALLOWED_APP_IDS` is set.** Without it, any application in your tenant that can
+  obtain a token for your audience can drive this webhook.
+- **`REVA_MODE` is `enforce`** when you are ready. A deployment left in `monitor` records
+  every denial and permits every one of them.
+- **`budgetExceeded` is monitored.** Microsoft's ~1000 ms budget is not negotiable from
+  here; a sustained run of exceedances means you are not enforcing.
