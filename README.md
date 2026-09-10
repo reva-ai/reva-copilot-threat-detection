@@ -47,7 +47,7 @@ call it, and there is no tenant-wide switch.
 
 ## Run it
 
-Requires **Node 18+** and nothing else — no runtime dependencies.
+Requires **Node 20+** and nothing else — no runtime dependencies.
 
 ```bash
 git clone https://github.com/reva-ai/reva-copilot-threat-detection.git

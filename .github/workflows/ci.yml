@@ -18,7 +18,7 @@ jobs:
       fail-fast: false
       matrix:
         # The floor stated in package.json engines, plus current LTS.
-        node: ["18", "20", "22"]
+        node: ["20", "22", "24"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

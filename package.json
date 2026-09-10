@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "repository": {
     "type": "git",
@@ -22,8 +22,8 @@
   },
   "dependencies": {},
   "optionalDependencies": {
-    "@aws-sdk/client-dynamodb": "^3.758.0",
-    "@aws-sdk/lib-dynamodb": "^3.758.0"
+    "@aws-sdk/client-dynamodb": "3.1129.0",
+    "@aws-sdk/lib-dynamodb": "3.1129.0"
   },
   "files": [
     "src",
