@@ -1,16 +1,20 @@
 {
   "name": "reva-copilot-threat-detection",
   "version": "0.1.0",
-  "description": "External threat detection provider for Microsoft Copilot Studio, backed by the Reva authorization PDP.",
+  "description": "External threat detection provider for Microsoft Copilot Studio. Authorizes every agent tool call at runtime against Reva policy. Runs in your own environment on Node or AWS Lambda, with zero runtime dependencies.",
   "license": "Apache-2.0",
   "type": "module",
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/reva-ai/reva-copilot-threat-detection.git"
   },
   "homepage": "https://github.com/reva-ai/reva-copilot-threat-detection#readme",
-  "bugs": { "url": "https://github.com/reva-ai/reva-copilot-threat-detection/issues" },
+  "bugs": {
+    "url": "https://github.com/reva-ai/reva-copilot-threat-detection/issues"
+  },
   "scripts": {
     "start": "node src/adapters/node/server.mjs",
     "test": "node --test test/",
@@ -21,6 +25,27 @@
     "@aws-sdk/client-dynamodb": "^3.758.0",
     "@aws-sdk/lib-dynamodb": "^3.758.0"
   },
-  "files": ["src", "docs", "examples", "LICENSE", "NOTICE", "README.md", "SECURITY.md"],
-  "keywords": ["copilot-studio", "threat-detection", "microsoft-entra", "authorization", "cedar", "reva"]
+  "files": [
+    "src",
+    "docs",
+    "examples",
+    "LICENSE",
+    "NOTICE",
+    "README.md",
+    "SECURITY.md"
+  ],
+  "keywords": [
+    "copilot-studio",
+    "microsoft-copilot-studio",
+    "power-platform",
+    "threat-detection",
+    "authorization",
+    "microsoft-entra",
+    "cedar-policy",
+    "ai-security",
+    "agent-security",
+    "webhook",
+    "aws-lambda",
+    "reva"
+  ]
 }
