@@ -92,7 +92,7 @@ Azure App Service, Azure Container Apps, ECS or Fargate, Kubernetes, a VM, on-pr
 ```bash
 git clone https://github.com/reva-ai/reva-copilot-threat-detection.git
 cd reva-copilot-threat-detection
-npm test          # 152 tests, no network required
+npm test          # no network required
 npm start         # listens on $PORT, default 8080
 ```
 
@@ -429,7 +429,7 @@ az account get-access-token --resource "https://threatdetection.yourcompany.com"
 ### 8.2 A tool call is evaluated
 
 ```bash
-npm test    # 152 tests, no network needed
+npm test    # no network needed
 ```
 
 To drive the running service with a Microsoft-shaped payload, post one of the bundled

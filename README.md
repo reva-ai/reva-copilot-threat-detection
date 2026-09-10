@@ -52,7 +52,7 @@ Requires **Node 20+** and nothing else — no runtime dependencies.
 ```bash
 git clone https://github.com/reva-ai/reva-copilot-threat-detection.git
 cd reva-copilot-threat-detection
-npm test        # 152 tests, no network needed
+npm test        # no network needed
 
 ENTRA_TENANT_ID=<your tenant>            \
 ENTRA_AUDIENCE=https://td.example.com    \
