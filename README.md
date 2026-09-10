@@ -8,23 +8,32 @@ You run it in your own environment, against your own Entra tenant. Reva does not
 and does not see your traffic.
 
 ```
- ┌──────────────────┐   1. a user asks the agent for something
- │  Copilot Studio  │
- │ generative agent │   2. the planner decides to call a tool
- └────────┬─────────┘
-          │  POST /analyze-tool-execution        (Entra bearer token)
-          ▼
- ┌──────────────────────────┐   3. translate Microsoft's payload into a
- │  THIS SERVICE            │      Reva evaluation request
- └────────┬─────────────────┘
-          │  POST /pdp/v2/ai/evaluation          (Reva bearer token)
-          ▼
- ┌──────────────────────────┐   4. Cedar policies + guardrails decide
- │  Reva PDP                │      (prompt injection, intent drift)
- └────────┬─────────────────┘
-          │  { "decision": true | false }
-          ▼
- back to Copilot Studio as { "blockAction": false | true }
+ ┌────────────────────────────┐
+ │  Copilot Studio            │   1. a user asks the agent for something
+ │  generative agent          │   2. the planner decides to call a tool
+ └────────────────────────────┘
+      │                   ▲
+      │ POST              │ { "blockAction": false | true }
+      │ /analyze-tool-    │
+      │ execution         │ 5. THIS SERVICE maps the decision onto
+      │ (Entra token)     │    Microsoft's schema and answers Copilot
+      ▼                   │
+ ┌────────────────────────────┐   3. translate Microsoft's payload into
+ │  THIS SERVICE              │      a Reva evaluation request
+ └────────────────────────────┘
+      │                   ▲
+      │ POST              │ { "decision": true | false }
+      │ /pdp/v2/ai/       │
+      │ evaluation        │
+      │ (Reva token)      │
+      ▼                   │
+ ┌────────────────────────────┐   4. Cedar policies + guardrails decide
+ │  Reva PDP                  │      (prompt injection, intent drift)
+ └────────────────────────────┘
+
+ The PDP never talks to Copilot. It answers THIS SERVICE, which owns the
+ translation in both directions — Microsoft's payload in, Microsoft's
+ blockAction out.
 ```
 
 ## Two things that surprise everyone
@@ -43,7 +52,7 @@ Requires **Node 18+** and nothing else — no runtime dependencies.
 ```bash
 git clone https://github.com/reva-ai/reva-copilot-threat-detection.git
 cd reva-copilot-threat-detection
-npm test        # 144 tests, no network needed
+npm test        # 152 tests, no network needed
 
 ENTRA_TENANT_ID=<your tenant>            \
 ENTRA_AUDIENCE=https://td.example.com    \

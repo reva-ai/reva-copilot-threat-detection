@@ -14,24 +14,33 @@ depends on the one before it.
 ## 1. How it fits together
 
 ```
- ┌──────────────────┐   1. user asks the agent something
- │  Copilot Studio  │
- │ generative agent │   2. planner decides to call a tool
- └────────┬─────────┘
-          │  POST /analyze-tool-execution        (Entra bearer token)
-          ▼
- ┌──────────────────────────┐   3. translate Microsoft's payload into a
- │  THIS SERVICE            │      Reva evaluation request
- │  threat-detection webhook│
- └────────┬─────────────────┘
-          │  POST /pdp/v2/ai/evaluation          (Reva bearer token)
-          ▼
- ┌──────────────────────────┐   4. Cedar policies + guardrails decide
- │  Reva PDP                │      (prompt injection, intent drift)
- └────────┬─────────────────┘
-          │  { "decision": true | false }
-          ▼
- back to Copilot Studio as { "blockAction": false | true }
+ ┌────────────────────────────┐
+ │  Copilot Studio            │   1. user asks the agent something
+ │  generative agent          │   2. planner decides to call a tool
+ └────────────────────────────┘
+      │                   ▲
+      │ POST              │ { "blockAction": false | true }
+      │ /analyze-tool-    │
+      │ execution         │ 5. THIS SERVICE maps the decision onto
+      │ (Entra token)     │    Microsoft's schema and answers Copilot
+      ▼                   │
+ ┌────────────────────────────┐   3. translate Microsoft's payload into a
+ │  THIS SERVICE              │      Reva evaluation request
+ │  threat-detection webhook  │
+ └────────────────────────────┘
+      │                   ▲
+      │ POST              │ { "decision": true | false }
+      │ /pdp/v2/ai/       │
+      │ evaluation        │
+      │ (Reva token)      │
+      ▼                   │
+ ┌────────────────────────────┐   4. Cedar policies + guardrails decide
+ │  Reva PDP                  │      (prompt injection, intent drift)
+ └────────────────────────────┘
+
+ The PDP never talks to Copilot. It answers THIS SERVICE, which owns the
+ translation in both directions — Microsoft's payload in, Microsoft's
+ blockAction out.
 ```
 
 Two things follow from this shape and cause most of the confusion during setup:
@@ -83,7 +92,7 @@ Azure App Service, Azure Container Apps, ECS or Fargate, Kubernetes, a VM, on-pr
 ```bash
 git clone https://github.com/reva-ai/reva-copilot-threat-detection.git
 cd reva-copilot-threat-detection
-npm test          # 144 tests, no network required
+npm test          # 152 tests, no network required
 npm start         # listens on $PORT, default 8080
 ```
 
@@ -417,7 +426,7 @@ az account get-access-token --resource "https://threatdetection.yourcompany.com"
 ### 8.2 A tool call is evaluated
 
 ```bash
-npm test    # 144 tests, no network needed
+npm test    # 152 tests, no network needed
 ```
 
 To drive the running service with a Microsoft-shaped payload, post one of the bundled
