@@ -9,11 +9,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/avprevai/reva-copilot-threat-detection.git"
+    "url": "git+https://github.com/reva-ai/reva-copilot-threat-detection.git"
   },
-  "homepage": "https://github.com/avprevai/reva-copilot-threat-detection#readme",
+  "homepage": "https://github.com/reva-ai/reva-copilot-threat-detection#readme",
   "bugs": {
-    "url": "https://github.com/avprevai/reva-copilot-threat-detection/issues"
+    "url": "https://github.com/reva-ai/reva-copilot-threat-detection/issues"
   },
   "scripts": {
     "start": "node src/adapters/node/server.mjs",

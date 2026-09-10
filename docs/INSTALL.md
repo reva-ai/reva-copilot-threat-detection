@@ -81,7 +81,7 @@ Everything else is off unless you switch it on, and returns `404` while off.
 Azure App Service, Azure Container Apps, ECS or Fargate, Kubernetes, a VM, on-prem:
 
 ```bash
-git clone https://github.com/avprevai/reva-copilot-threat-detection.git
+git clone https://github.com/reva-ai/reva-copilot-threat-detection.git
 cd reva-copilot-threat-detection
 npm test          # 144 tests, no network required
 npm start         # listens on $PORT, default 8080
