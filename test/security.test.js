@@ -16,8 +16,23 @@ const POWER_PLATFORM = "22222222-2222-2222-2222-222222222222";
 const OTHER_APP = "33333333-3333-3333-3333-333333333333";
 
 /** A real RS256 token, signed with a throwaway key whose JWK we hand to the verifier. */
+/**
+ * One keypair for the whole file.
+ *
+ * This used to generate a fresh RSA-2048 key inside signedToken(), which is eight keygens
+ * per run — and `node --test` runs test files as parallel processes, so those eight land on
+ * a machine already saturated by every other file. Under that contention this file
+ * intermittently died with SIGABRT rather than failing an assertion: roughly 1 run in 20,
+ * enough to redden CI on an unrelated pull request and send someone hunting a bug that is
+ * not there.
+ *
+ * Nothing needed distinct keys. Each test builds its own verifier and hands it the matching
+ * JWK, so one keypair is as good as eight and costs an eighth of the CPU.
+ */
+const KEYPAIR = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+
 function signedToken(claims) {
-  const { publicKey, privateKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const { publicKey, privateKey } = KEYPAIR;
   const jwk = { ...publicKey.export({ format: "jwk" }), kid: "test-kid", use: "sig", alg: "RS256" };
   const now = Math.floor(Date.now() / 1000);
   const header = { alg: "RS256", typ: "JWT", kid: "test-kid" };
