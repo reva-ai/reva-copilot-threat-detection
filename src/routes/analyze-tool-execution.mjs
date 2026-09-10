@@ -2,7 +2,6 @@ import { buildAuthConfigFromEnv, createAuth } from "../core/auth.mjs";
 import {
   createThreatResponse,
   evaluateToolExecution,
-  computeBlockedFlags,
   sanitizeMicrosoftAnalyzeResponse,
   isCopilotTopicInvocation,
   REASON_CODE_AUTHZ_UNAVAILABLE
@@ -103,11 +102,28 @@ function normalizeAnalyzePayload(payload) {
   };
 }
 
+/**
+ * True until the first invocation on this container answers.
+ *
+ * A cold start is the single biggest thing that pushes a response past Microsoft's budget:
+ * the JWKS fetch, the DynamoDB connection and the TLS handshake to the PDP all happen once,
+ * and the request that pays for them is the one Copilot has already stopped waiting for. A
+ * 4-second response looks alarming and a 300 ms one looks fine, and until this flag existed
+ * the event could not tell you which kind you were reading.
+ */
+let coldStart = true;
+
 export const handleAnalyzeToolExecution = async (req) => {
   // Microsoft allows this webhook about 1000 ms and treats anything slower as "allow", so
   // our own end-to-end time is the number that matters — not the PDP call alone. Measured
   // here rather than inferred, because the budget is the one thing we cannot negotiate.
   const startedMs = Date.now();
+  const wasColdStart = coldStart;
+  coldStart = false;
+  // Phase timings, so a slow response says WHERE it was slow. Only the PDP leg was ever
+  // measured, which left "3.3 seconds happened somewhere else" as the whole diagnosis.
+  let authMs = null;
+  let jwksFetched = null;
   const headers = req.headers || {};
   if ((req.method || "GET") !== "POST") {
     return withCorrelation(headers, methodNotAllowed());
@@ -116,7 +132,10 @@ export const handleAnalyzeToolExecution = async (req) => {
   const token = parseAuthorization(headers);
   let authResult;
   try {
+    const authStartedMs = Date.now();
     authResult = await AUTH.authenticateBearerToken(token);
+    authMs = Date.now() - authStartedMs;
+    jwksFetched = authResult.jwksFetched ?? null;
   } catch (err) {
     await appendObservabilityEvent({
       path: "/analyze-tool-execution",
@@ -198,21 +217,22 @@ export const handleAnalyzeToolExecution = async (req) => {
     return withCorrelation(headers, jsonResponse(200, { blockAction: false }));
   }
 
-  const policyRow = await getPolicyConfig();
-
   let policyResult;
   let pdpDiagnostics = null;
   /** Set only in monitor mode, and only when the PDP actually said deny. */
   let monitorWouldDeny = null;
 
   if (isRevaPdpConfigured(REVA_PDP_CONFIG)) {
-    const computedFlags = computeBlockedFlags(normalizedPayload, {
-      blockedTerms: policyRow.blockedTerms,
-      blockedToolNames: policyRow.blockedToolNames
-    });
+    // No getPolicyConfig() here, and no computeBlockedFlags(). Both used to run on this
+    // path and neither reached a decision: the blocked-term flags were removed from the PDP
+    // request long ago — no policy referenced them and they were never in the schema — so
+    // all they did was cost a DynamoDB read per request and land a field in the event that
+    // nothing reads. On a control with a 1000 ms budget that is not free.
+    //
+    // The terms themselves are untouched and still decide the fallback below, which is the
+    // only place they ever had authority.
     const pdpOutcome = await evaluateViaRevaPdp(
       normalizedPayload,
-      computedFlags,
       REVA_PDP_CONFIG,
       authResult,
       correlationId
@@ -267,6 +287,8 @@ export const handleAnalyzeToolExecution = async (req) => {
       }
     }
   } else {
+    // The only path where the configured terms decide anything, so the read happens here.
+    const policyRow = await getPolicyConfig();
     policyResult = evaluateToolExecution(normalizedPayload, {
       blockedTerms: policyRow.blockedTerms,
       blockedToolNames: policyRow.blockedToolNames
@@ -296,7 +318,22 @@ export const handleAnalyzeToolExecution = async (req) => {
     // enforcement point is being bypassed by timeout, whatever the decisions say.
     latency: (() => {
       const totalMs = Date.now() - startedMs;
-      return { totalMs, budgetMs: COPILOT_BUDGET_MS, budgetExceeded: totalMs > COPILOT_BUDGET_MS };
+      const pdpMs = pdpDiagnostics?.latencyMs ?? null;
+      // Whatever the two named legs do not account for: body parse, redaction, and on the
+      // fallback path the config read. Derived rather than measured so the parts always sum
+      // to the total and nothing can hide between them.
+      const otherMs = totalMs - (authMs ?? 0) - (pdpMs ?? 0);
+      return {
+        totalMs,
+        budgetMs: COPILOT_BUDGET_MS,
+        budgetExceeded: totalMs > COPILOT_BUDGET_MS,
+        authMs,
+        pdpMs,
+        otherMs,
+        // The two that turn "probably a cold start" into a fact.
+        coldStart: wasColdStart,
+        jwksFetched
+      };
     })(),
     // The whole product of a monitor-mode run. `response` above says the call was allowed,
     // which is true and is also the opposite of what happened in policy terms, so the

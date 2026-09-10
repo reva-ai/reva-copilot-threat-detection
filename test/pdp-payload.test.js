@@ -4,7 +4,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildPdpRequest, buildRevaPdpConfigFromEnv, evaluateViaRevaPdp, isRevaPdpConfigured } from "../src/core/pdp.mjs";
-import { computeBlockedFlags } from "../src/core/policy.mjs";
 import { buildMappingConfigFromEnv } from "../src/core/mapping.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -28,8 +27,7 @@ function build(name, envOverrides = {}) {
   // Go through the real env -> config path, so a test can name an actual variable.
   // `builder` stays as a direct-option escape hatch and wins over anything derived.
   const cfg = buildRevaPdpConfigFromEnv(envOverrides);
-  const flags = computeBlockedFlags(payload, { blockedTerms: ["confidential claims", "all policyholders"], blockedToolNames: [] });
-  return buildPdpRequest(payload, flags, { principal: {} }, "99999999-9999-9999-9999-999999999999", {
+  return buildPdpRequest(payload, { principal: {} }, "99999999-9999-9999-9999-999999999999", {
     mapping: cfg.mapping,
     contextAttrPrefix: cfg.contextAttrPrefix,
     sendSchemaContext: cfg.sendSchemaContext,
@@ -360,7 +358,7 @@ test("a 403 carrying a decision is a policy DENY, not a transport failure", asyn
     { status: 403 }
   ));
   try {
-    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), {}, PDP_CONFIG, { principal: {} }, "cid");
+    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), PDP_CONFIG, { principal: {} }, "cid");
     assert.equal(out.ok, true);
     assert.equal(out.policyResult.blockAction, true);
   } finally {
@@ -371,7 +369,7 @@ test("a 403 carrying a decision is a policy DENY, not a transport failure", asyn
 test("a 200 with decision true allows", async () => {
   const restore = stubFetch(async () => new Response(JSON.stringify({ decision: true, threadId: "t" }), { status: 200 }));
   try {
-    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), {}, PDP_CONFIG, { principal: {} }, "cid");
+    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), PDP_CONFIG, { principal: {} }, "cid");
     assert.equal(out.ok, true);
     assert.equal(out.policyResult.blockAction, false);
   } finally {
@@ -388,7 +386,7 @@ test("a 400 carrying decision:false is a MALFORMED REQUEST, not a policy deny", 
     { status: 400 }
   ));
   try {
-    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), {}, PDP_CONFIG, { principal: {} }, "cid");
+    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), PDP_CONFIG, { principal: {} }, "cid");
     assert.equal(out.ok, false, "must not be reported as an authoritative decision");
     assert.equal(out.policyResult, null);
     assert.equal(out.diagnostics.errorKind, "invalid-payload");
@@ -412,7 +410,7 @@ test("a 403 WITHOUT error_type is our payload being wrong, not a policy deny", a
     { status: 403 }
   ));
   try {
-    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), {}, PDP_CONFIG, { principal: {} }, "cid");
+    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), PDP_CONFIG, { principal: {} }, "cid");
     assert.equal(out.ok, false, "must not be reported as an authoritative decision");
     assert.equal(out.policyResult, null);
     assert.equal(out.diagnostics.errorKind, "invalid-payload");
@@ -425,7 +423,7 @@ test("a 403 WITHOUT error_type is our payload being wrong, not a policy deny", a
 test("a 5xx carrying a decision is a service fault, not a policy deny", async () => {
   const restore = stubFetch(async () => new Response(JSON.stringify({ decision: false }), { status: 503 }));
   try {
-    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), {}, PDP_CONFIG, { principal: {} }, "cid");
+    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), PDP_CONFIG, { principal: {} }, "cid");
     assert.equal(out.ok, false);
     assert.equal(out.diagnostics.errorKind, "protocol");
   } finally {
@@ -441,7 +439,7 @@ test("the end user comes from the body, never from the transport token", () => {
   // authorize the wrong subject entirely.
   const p = fixture("microsoft-analyze-allow");
   const built = buildPdpRequest(
-    p, {}, { principal: { oid: "SERVICE-PRINCIPAL-OID", sub: "sp-sub" } }, "cid",
+    p, { principal: { oid: "SERVICE-PRINCIPAL-OID", sub: "sp-sub" } }, "cid",
     { mapping: buildMappingConfigFromEnv({}), nowMs: NOW }
   );
   assert.equal(built.principalSource, "conversation-metadata");
@@ -452,7 +450,7 @@ test("a missing body user falls back to the token, and says so", () => {
   const p = fixture("microsoft-analyze-allow");
   delete p.conversationMetadata.user;
   const built = buildPdpRequest(
-    p, {}, { principal: { oid: "SERVICE-PRINCIPAL-OID" } }, "cid",
+    p, { principal: { oid: "SERVICE-PRINCIPAL-OID" } }, "cid",
     { mapping: buildMappingConfigFromEnv({}), nowMs: NOW }
   );
   assert.equal(built.principalSource, "token-oid");
@@ -470,7 +468,7 @@ test("REVA_REQUIRE_BODY_PRINCIPAL refuses BEFORE the call when the user is not i
   let called = false;
   const restore = stubFetch(async () => { called = true; return new Response("{}", { status: 200 }); });
   try {
-    const out = await evaluateViaRevaPdp(p, {}, cfg, { principal: { oid: "sp" } }, "cid");
+    const out = await evaluateViaRevaPdp(p, cfg, { principal: { oid: "sp" } }, "cid");
     assert.equal(called, false, "must refuse without asking the PDP");
     assert.equal(out.ok, false);
     assert.equal(out.diagnostics.errorKind, "no-principal");
@@ -482,7 +480,7 @@ test("REVA_REQUIRE_BODY_PRINCIPAL refuses BEFORE the call when the user is not i
 test("principal provenance is on every event's entityResolution", async () => {
   const restore = stubFetch(async () => new Response(JSON.stringify({ decision: true }), { status: 200 }));
   try {
-    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), {}, PDP_CONFIG, { principal: {} }, "cid");
+    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), PDP_CONFIG, { principal: {} }, "cid");
     assert.match(out.diagnostics.entityResolution.user, /^conversation-metadata:/);
   } finally {
     restore();
@@ -505,7 +503,7 @@ test("a socket that dies mid-flight is retried once and can succeed", async () =
     return new Response(JSON.stringify({ decision: true }), { status: 200 });
   });
   try {
-    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), {}, PDP_CONFIG, { principal: {} }, "cid");
+    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), PDP_CONFIG, { principal: {} }, "cid");
     assert.equal(calls, 2);
     assert.equal(out.ok, true);
     assert.equal(out.policyResult.blockAction, false);
@@ -520,7 +518,7 @@ test("the retry happens at most once", async () => {
   let calls = 0;
   const restore = stubFetch(async () => { calls += 1; throw socketError("ECONNRESET"); });
   try {
-    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), {}, PDP_CONFIG, { principal: {} }, "cid");
+    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), PDP_CONFIG, { principal: {} }, "cid");
     assert.equal(calls, 2, "two attempts total, never a third");
     assert.equal(out.ok, false);
     assert.equal(out.diagnostics.errorKind, "transport");
@@ -533,7 +531,7 @@ test("a refused connection is NOT retried — the service is down, not flaky", a
   let calls = 0;
   const restore = stubFetch(async () => { calls += 1; throw socketError("ECONNREFUSED"); });
   try {
-    await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), {}, PDP_CONFIG, { principal: {} }, "cid");
+    await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), PDP_CONFIG, { principal: {} }, "cid");
     assert.equal(calls, 1);
   } finally {
     restore();
@@ -583,7 +581,7 @@ test("retrying never exceeds the single deadline shared by both attempts", async
   });
 
   try {
-    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), {}, config, { principal: {} }, "cid");
+    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), config, { principal: {} }, "cid");
 
     // Without this the test passes for the wrong reason: if retrying broke entirely, one
     // attempt would also come in under any timing bound.
@@ -615,7 +613,7 @@ test("a 401 with no decision is an auth fault, not a deny", async () => {
   });
   const restore = stubFetch(async () => new Response(body, { status: 401 }));
   try {
-    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), {}, PDP_CONFIG, { principal: {} }, "cid");
+    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), PDP_CONFIG, { principal: {} }, "cid");
     assert.equal(out.ok, false);
     assert.equal(out.diagnostics.errorKind, "auth");
   } finally {
@@ -647,7 +645,7 @@ test("a non-JSON error body is an upstream block, not a malformed payload", asyn
       })
   );
   try {
-    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), {}, PDP_CONFIG, { principal: {} }, "cid");
+    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), PDP_CONFIG, { principal: {} }, "cid");
     assert.equal(out.ok, false, "still fail-closed — an unanswered question is not an allow");
     assert.equal(out.diagnostics.errorKind, "upstream-blocked");
     assert.match(out.diagnostics.error, /blocked before reaching the PDP/);
@@ -670,7 +668,7 @@ test("a JSON 403 the PDP itself rejected is still invalid-payload", async () => 
       })
   );
   try {
-    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), {}, PDP_CONFIG, { principal: {} }, "cid");
+    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), PDP_CONFIG, { principal: {} }, "cid");
     assert.equal(out.ok, false);
     assert.equal(out.diagnostics.errorKind, "invalid-payload");
   } finally {
@@ -683,7 +681,7 @@ test("a 401 stays an auth fault even when the body is not JSON", async () => {
   // here is a token scoped to the wrong path family. "Check the credentials" wins.
   const restore = stubFetch(async () => new Response("unauthorized", { status: 401 }));
   try {
-    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), {}, PDP_CONFIG, { principal: {} }, "cid");
+    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), PDP_CONFIG, { principal: {} }, "cid");
     assert.equal(out.diagnostics.errorKind, "auth");
   } finally {
     restore();
@@ -694,7 +692,7 @@ test("an empty error body is not mistaken for an upstream block", async () => {
   // 502/503 with no body is a gateway fault, which already has a kind.
   const restore = stubFetch(async () => new Response("", { status: 503 }));
   try {
-    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), {}, PDP_CONFIG, { principal: {} }, "cid");
+    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), PDP_CONFIG, { principal: {} }, "cid");
     assert.equal(out.diagnostics.errorKind, "protocol");
   } finally {
     restore();
@@ -715,7 +713,7 @@ test("a slow PDP aborts and is reported as a timeout", async () => {
       })
   );
   try {
-    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), {}, PDP_CONFIG, { principal: {} }, "cid");
+    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), PDP_CONFIG, { principal: {} }, "cid");
     assert.equal(out.ok, false);
     assert.equal(out.diagnostics.errorKind, "timeout");
     assert.ok(out.diagnostics.error.includes("timed out"));
@@ -739,7 +737,7 @@ test("unmapped entities reach the PDP instead of being refused locally", async (
       REVA_PDP_TOKEN: "t",
       REVA_ON_UNMAPPED_ENTITY: "deny" // removed; must have no effect
     });
-    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), {}, cfg, { principal: {} }, "cid");
+    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-allow"), cfg, { principal: {} }, "cid");
     assert.equal(called, true, "the request must reach the PDP");
     assert.equal(out.ok, true);
     assert.equal(out.policyResult.blockAction, false);
@@ -774,7 +772,7 @@ test("the traceparent header ties every decision in a chat to one trace", async 
     return new Response(JSON.stringify({ decision: true }), { status: 200 });
   });
   try {
-    await evaluateViaRevaPdp(fixture("microsoft-analyze-multiturn-drift"), {}, PDP_CONFIG, { principal: {} }, "99999999-9999-9999-9999-999999999999");
+    await evaluateViaRevaPdp(fixture("microsoft-analyze-multiturn-drift"), PDP_CONFIG, { principal: {} }, "99999999-9999-9999-9999-999999999999");
     assert.match(seen.traceparent, /^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
     assert.equal(seen.policyStoreId, "store-1");
     assert.equal(seen.Authorization, "Bearer tok");
@@ -786,7 +784,7 @@ test("the traceparent header ties every decision in a chat to one trace", async 
 test("diagnostics report payload shape and entity resolution, never prompt text", async () => {
   const restore = stubFetch(async () => new Response(JSON.stringify({ decision: true }), { status: 200 }));
   try {
-    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-multiturn-drift"), {}, PDP_CONFIG, { principal: {} }, "cid");
+    const out = await evaluateViaRevaPdp(fixture("microsoft-analyze-multiturn-drift"), PDP_CONFIG, { principal: {} }, "cid");
     assert.equal(out.diagnostics.payloadShape.conversation, out.diagnostics.payloadShape.hops);
     assert.ok(out.diagnostics.entityResolution.tool.startsWith("slug:"));
     assert.ok(!JSON.stringify(out.diagnostics.payloadShape).includes("policyholders"));
