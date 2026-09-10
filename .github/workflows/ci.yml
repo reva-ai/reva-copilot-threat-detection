@@ -60,3 +60,35 @@ jobs:
         # identifies a real deployment may land in it. Written in Node rather than grep
         # because backreferences are not portable across grep implementations.
         run: node scripts/check-no-real-identifiers.mjs
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: this repo is public, so a secret that was committed and later
+          # removed is still published. Scanning only the tip would miss exactly the case
+          # that matters most.
+          fetch-depth: 0
+      - name: Scan the working tree and every commit for credentials
+        # Complements no-real-identifiers rather than replacing it. That check knows this
+        # organisation — internal hostnames, our own token shapes — and gitleaks knows the
+        # world's: GitHub PATs, Slack tokens, Azure client secrets, cloud API keys. Measured
+        # on synthetic credentials, each catches things the other does not, so both run.
+        #
+        # The pinned binary rather than gitleaks-action, because that action requires a
+        # licence key for organisation-owned repositories. A checksum-verified release is
+        # also less to trust: no third-party action code runs in a job that can read the
+        # repository.
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          set -euo pipefail
+          url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL -o gitleaks.tar.gz "$url"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          tar xzf gitleaks.tar.gz gitleaks
+          # --redact so a finding never prints the secret into a public build log.
+          ./gitleaks git . --redact --no-banner
+          ./gitleaks dir . --redact --no-banner
