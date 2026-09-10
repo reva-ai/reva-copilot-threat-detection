@@ -80,9 +80,10 @@ function assertClaims(payload, config) {
   //    example, using an allow list of app IDs, or role-based access control"
   //   — learn.microsoft.com/microsoft-copilot-studio/external-security-webhooks-interface-developers
   //
-  // v1.0 tokens carry the caller in `appid`, v2.0 in `azp`. Unset means unenforced, because
-  // we cannot ship a guessed GUID as a security control — see callerAppId on the
-  // observability event for the value to put here.
+  // v1.0 tokens carry the caller in `appid`, v2.0 in `azp`. The list is guaranteed non-empty
+  // in entra mode — createAuth refuses to construct without it — so this always enforces.
+  // The length check remains because createAuth also serves the static and insecure-local
+  // modes, which have no allowlist and must not be gated on one.
   if (config.allowedAppIds && config.allowedAppIds.length > 0) {
     const caller = callerAppIdOf(payload);
     if (!caller) {
@@ -153,6 +154,40 @@ function findJwk(keys, kid) {
 }
 
 export function createAuth(options = {}) {
+  // Refuse to run Entra mode without an application allowlist.
+  //
+  // Everything else in this file proves a token came from the right TENANT for the right
+  // AUDIENCE. It cannot prove Power Platform sent it. Without an allowlist, any application
+  // in the customer's tenant that can obtain a token for this audience is authorized to
+  // decide whether tool calls go ahead — and deciding that is what this service is for.
+  // Microsoft assigns the check to the partner rather than the platform, so nothing
+  // upstream compensates for skipping it.
+  //
+  // This is a startup error, not a per-request one, because a service that answers requests
+  // while unprotected has already failed. Failing at construction kills the Lambda cold
+  // start or the node process loudly, with the variable named, rather than serving traffic
+  // a reader of the docs would reasonably assume was guarded.
+  //
+  // There is deliberately no opt-out. The value is knowable before the first call: Power
+  // Platform federates into the customer's own app registration, so the `appid` claim
+  // equals the Application (client) ID from setup. Confirmed against live Copilot Studio
+  // traffic, where the observed callerAppId matched the configured registration exactly —
+  // which is also why the recorded callerAppId is a confirmation aid, not a discovery
+  // mechanism. Local development with no Entra tenant uses ALLOW_INSECURE_LOCAL_AUTH with
+  // AUTH_TOKEN, a different mode that this does not affect.
+  if (options.mode === "entra" && !(options.allowedAppIds?.length > 0)) {
+    throw new Error(
+      "ENTRA_ALLOWED_APP_IDS is required when ENTRA_TENANT_ID and ENTRA_AUDIENCE are set. " +
+        "Validating a token proves the tenant and the audience, not which application called: " +
+        "without this, any app in your tenant that can obtain a token for this audience could " +
+        "drive tool authorization decisions. Set it to the Application (client) ID of the app " +
+        "registration Power Platform federates into (INSTALL.md section 4.1a); every " +
+        "observability event records the observed callerAppId so you can confirm the two " +
+        "match. For local development without Entra, use ALLOW_INSECURE_LOCAL_AUTH=true with " +
+        "AUTH_TOKEN instead."
+    );
+  }
+
   const cache = {
     keys: null,
     expiresAt: 0
@@ -225,9 +260,9 @@ export function buildAuthConfigFromEnv(env = process.env) {
       issuer,
       jwksUri,
       /**
-       * Applications permitted to call this webhook, lower-cased for comparison. Empty
-       * means unenforced — tenant + audience are then the only gate, which Microsoft
-       * considers insufficient. See assertClaims().
+       * Applications permitted to call this webhook, lower-cased for comparison. Required:
+       * tenant + audience alone is a gate Microsoft considers insufficient, so createAuth
+       * refuses to construct when this comes out empty. See assertClaims().
        */
       allowedAppIds: String(env.ENTRA_ALLOWED_APP_IDS || "")
         .split(",")

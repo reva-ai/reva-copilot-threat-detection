@@ -24,7 +24,7 @@ unset over setting it to its default — an unset variable cannot drift.
 ```bash
 ENTRA_TENANT_ID=11111111-1111-1111-1111-111111111111     # required
 ENTRA_AUDIENCE=https://threatdetection.yourcompany.com   # required
-ENTRA_ALLOWED_APP_IDS=77777777-7777-7777-7777-777777777777
+ENTRA_ALLOWED_APP_IDS=77777777-7777-7777-7777-777777777777  # required
 ENTRA_ISSUER=                                            # optional override
 ENTRA_JWKS_URI=                                          # optional override
 JWT_CLOCK_SKEW_SECONDS=60
@@ -34,10 +34,16 @@ JWKS_CACHE_TTL_MS=300000
 `ENTRA_AUDIENCE` must be **byte-identical** to the Application ID URI on your app
 registration. This is the most common misconfiguration; a mismatch produces `AADSTS500011`.
 
-**`ENTRA_ALLOWED_APP_IDS` is the one not to skip.** Validating a token proves it came from
-the right tenant for the right audience. It does **not** prove Copilot Studio sent it — any
-application in your tenant able to obtain a token for your audience passes. This pins the
-caller.
+**`ENTRA_ALLOWED_APP_IDS` is required, and the service will not start without it.**
+Validating a token proves it came from the right tenant for the right audience. It does
+**not** prove Copilot Studio sent it — any application in your tenant able to obtain a token
+for your audience passes. This pins the caller.
+
+It is enforced at startup rather than warned about at runtime, because the failure is
+otherwise silent: without it the service answers normally and nothing reports that the
+application check never ran. If it is missing, the process exits with an error naming the
+variable. For local development with no Entra tenant, use `ALLOW_INSECURE_LOCAL_AUTH=true`
+with `AUTH_TOKEN` — a different mode, and never for real traffic.
 
 The value is the **Application (client) ID** you registered during setup and entered in
 Power Platform admin center. Power Platform federates into that app, so the `appid` (v1) or

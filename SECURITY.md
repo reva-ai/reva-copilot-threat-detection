@@ -47,8 +47,11 @@ tenant able to obtain a token for your audience passes. Set `ENTRA_ALLOWED_APP_I
 Application (client) ID you registered for the integration. Microsoft treats this as the
 provider's responsibility, and their own Defender integration enforces the same check.
 
-Left unset, the control is off. It ships that way because the correct value is specific to
-your tenant and a wrong GUID in a security control is worse than an absent one.
+This is required: with `ENTRA_TENANT_ID` and `ENTRA_AUDIENCE` set, the service refuses to
+start until it is configured. Earlier versions shipped it off by default, on the reasoning
+that a wrong GUID is worse than an absent one — but the value is not a guess. Power Platform
+federates into your own app registration, so it is the Application (client) ID from setup,
+and the failure mode of leaving it unset is silent, which is the worse of the two.
 
 **Fail closed.** If the PDP cannot be reached, times out, or rejects the request, the answer
 is *block* — `blockAction: true`, reason code 103, with wording that names a service failure

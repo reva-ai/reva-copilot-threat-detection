@@ -232,3 +232,37 @@ test("the Lambda adapter normalises API Gateway events, including base64 bodies"
   assert.equal(rest.path, "/validate");
   assert.equal(rest.body, "");
 });
+
+// ── the allowlist is a startup requirement, not a runtime warning ────────────
+//
+// Proven at the route module, not just at createAuth, because that is the layer a
+// deployment actually loads: both routes build their auth at module scope, so an
+// unconfigured allowlist kills the Lambda cold start or the node process instead of
+// quietly serving traffic with only a tenant and audience check in front of it.
+
+for (const file of ["analyze-tool-execution.mjs", "validate.mjs"]) {
+  test(`${file} refuses to load in entra mode without an allowlist`, async () => {
+    await assert.rejects(
+      () =>
+        loadRoute(file, {
+          ALLOW_INSECURE_LOCAL_AUTH: undefined,
+          AUTH_TOKEN: undefined,
+          ENTRA_TENANT_ID: "11111111-1111-1111-1111-111111111111",
+          ENTRA_AUDIENCE: "https://td.example.com",
+          ENTRA_ALLOWED_APP_IDS: undefined
+        }),
+      /ENTRA_ALLOWED_APP_IDS is required/
+    );
+  });
+
+  test(`${file} loads once the allowlist is set`, async () => {
+    const mod = await loadRoute(file, {
+      ALLOW_INSECURE_LOCAL_AUTH: undefined,
+      AUTH_TOKEN: undefined,
+      ENTRA_TENANT_ID: "11111111-1111-1111-1111-111111111111",
+      ENTRA_AUDIENCE: "https://td.example.com",
+      ENTRA_ALLOWED_APP_IDS: "22222222-2222-2222-2222-222222222222"
+    });
+    assert.equal(typeof Object.values(mod)[0], "function");
+  });
+}
