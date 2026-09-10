@@ -49,12 +49,19 @@ const COPILOT_BUDGET_MS = 1000;
  * has to point at a different place to look, which is the entire reason these are not one
  * message: "invalid-payload" means the PDP answered and rejected what we sent — a bug on
  * this side — while "transport" means it never answered at all.
+ *
+ * "upstream-blocked" is the third case and it is neither: the PDP was never asked, because a
+ * CDN or WAF in front of it refused the request. It reads differently on purpose. The fix is
+ * an exemption in someone else's infrastructure config, not a change here, and the message
+ * has to say so or the time goes into the request builder instead.
  */
 const FAILURE_DETAIL = {
   "no-principal": "this request does not identify the end user",
   timeout: "the authorization service did not respond in time",
   auth: "the authorization service rejected our credentials",
   "invalid-payload": "the authorization service rejected this request as malformed",
+  "upstream-blocked":
+    "a CDN or WAF in front of the authorization service blocked this request before it arrived",
   transport: "the authorization service could not be reached"
 };
 
@@ -215,7 +222,12 @@ export const handleAnalyzeToolExecution = async (req) => {
       // Platform's admin-center error behavior, whose default is to allow — so a PDP outage
       // would silently permit every tool call. Answer Microsoft with a real decision, and
       // make the reason name a SERVICE failure so nobody goes looking through Cedar.
-      const summary = summarizePdpDiagnostics(pdpOutcome.diagnostics);
+      // Carried to the single event written at the end of this handler. A failure used to
+      // append its own event here AND fall through to that one, so one Copilot request
+      // produced two rows: this one with no `blockAction` (the dashboard renders it "N/A")
+      // and the real verdict separately, under the same correlationId. It read as the
+      // service answering twice, differently. One request, one event.
+      pdpDiagnostics = pdpOutcome.diagnostics;
       const kind = pdpOutcome.diagnostics?.errorKind || "transport";
       const detail = FAILURE_DETAIL[kind] || FAILURE_DETAIL.transport;
 
@@ -231,21 +243,6 @@ export const handleAnalyzeToolExecution = async (req) => {
             reason: `Not authorized: ${detail}. This is a service problem, not a policy decision.`,
             details: { source: "reva-pdp-unavailable", errorKind: kind }
           };
-
-      await appendObservabilityEvent({
-        path: "/analyze-tool-execution",
-        method: "POST",
-        statusCode: 200,
-        authType: authResult.authType || "unknown",
-        correlationId,
-        requestPayload: redactForStorage(payload),
-        response: {
-          errorCode: 5020,
-          message: "Reva PDP evaluation failed.",
-          failOpen: Boolean(REVA_PDP_CONFIG.failOpen),
-          diagnostics: JSON.stringify(summary)
-        }
-      });
     } else {
       policyResult = pdpOutcome.policyResult;
       pdpDiagnostics = pdpOutcome.diagnostics;
