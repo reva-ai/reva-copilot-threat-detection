@@ -3,7 +3,7 @@
 ## Before you open a pull request
 
 ```bash
-npm test                                   # 144 tests, no network
+npm test                                   # 152 tests, no network
 node scripts/check-no-real-identifiers.mjs # nothing real may land in a public repo
 ```
 
