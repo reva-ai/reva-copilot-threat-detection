@@ -129,6 +129,12 @@ async function fetchJwks(config, cache) {
     return cache.keys;
   }
 
+  // Counted, not timed. A cold or expired cache means an outbound call to Microsoft on the
+  // critical path, and that is the difference between a 300 ms answer and a 4-second one —
+  // which is to say, between enforcing and not. The event records whether it happened, so a
+  // slow response does not have to be guessed at.
+  cache.fetches = (cache.fetches || 0) + 1;
+
   const response = await fetch(config.jwksUri, {
     headers: {
       Accept: "application/json"
@@ -228,11 +234,18 @@ export function createAuth(options = {}) {
     }
 
     if (options.mode === "entra") {
+      const fetchesBefore = cache.fetches || 0;
       const principal = await verifyEntraJwt(token);
       // Recorded on every event even when the allowlist is empty: it is the only way to
       // learn the real Power Platform app id, and therefore the only way to populate
       // ENTRA_ALLOWED_APP_IDS from evidence rather than from a guess.
-      return { ok: true, principal, authType: "entra", callerAppId: callerAppIdOf(principal) };
+      return {
+        ok: true,
+        principal,
+        authType: "entra",
+        callerAppId: callerAppIdOf(principal),
+        jwksFetched: (cache.fetches || 0) > fetchesBefore
+      };
     }
 
     return { ok: false, reason: `Unsupported auth mode "${options.mode}".` };

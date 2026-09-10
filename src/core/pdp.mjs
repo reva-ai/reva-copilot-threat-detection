@@ -173,8 +173,7 @@ function extractInputValues(payload) {
  *   resource {type:"Widget"}  -> 403 invokeTool requires a Tool resource, resolved "Widget"
  *   action   "frobnicate"     -> 403 Tool resource requires action invokeTool
  */
-export function buildPdpRequest(payload, computedFlags, authResult, correlationId, options = {}) {
-  const flags = computedFlags || {};
+export function buildPdpRequest(payload, authResult, correlationId, options = {}) {
   const plannerContext = normalizePlannerContext(payload);
   const toolDefinition = payload?.toolDefinition || {};
   const principal = authResult?.principal || {};
@@ -482,7 +481,6 @@ export function summarizePdpDiagnostics(d) {
     error: d.error,
     errorKind: d.errorKind,
     toolName: d.toolName,
-    computedFlags: d.computedFlags,
     // Names and counts only — safe to leave on, which is the point. A conversation/hops
     // divergence is a defect, and this is the cheapest place to see it.
     payloadShape: d.payloadShape,
@@ -504,7 +502,7 @@ export function summarizePdpDiagnostics(d) {
  * outage, because "blocked by policy" sends the reader to Cedar and "cannot reach the
  * authorization service" sends them to their config; the wrong one costs a day.
  */
-export async function evaluateViaRevaPdp(payload, computedFlags, pdpConfig, authResult, correlationId) {
+export async function evaluateViaRevaPdp(payload, pdpConfig, authResult, correlationId) {
   const { pdpUrl, policyStoreId, pdpToken, pdpOrigin } = pdpConfig;
   const started = Date.now();
   const urlParts = safePdpUrlParts(pdpUrl);
@@ -520,7 +518,6 @@ export async function evaluateViaRevaPdp(payload, computedFlags, pdpConfig, auth
     pdpReason: null,
     error: null,
     errorKind: null,
-    computedFlags: { ...computedFlags },
     toolName: payload?.toolDefinition?.name || null,
     payloadShape: null,
     entityResolution: null,
@@ -534,7 +531,7 @@ export async function evaluateViaRevaPdp(payload, computedFlags, pdpConfig, auth
 
   let built;
   try {
-    built = buildPdpRequest(payload, computedFlags, authResult, correlationId, {
+    built = buildPdpRequest(payload, authResult, correlationId, {
       mapping: pdpConfig.mapping,
       contextAttrPrefix: pdpConfig.contextAttrPrefix,
       sendSchemaContext: pdpConfig.sendSchemaContext,
