@@ -222,7 +222,12 @@ export const handleAnalyzeToolExecution = async (req) => {
       // Platform's admin-center error behavior, whose default is to allow — so a PDP outage
       // would silently permit every tool call. Answer Microsoft with a real decision, and
       // make the reason name a SERVICE failure so nobody goes looking through Cedar.
-      const summary = summarizePdpDiagnostics(pdpOutcome.diagnostics);
+      // Carried to the single event written at the end of this handler. A failure used to
+      // append its own event here AND fall through to that one, so one Copilot request
+      // produced two rows: this one with no `blockAction` (the dashboard renders it "N/A")
+      // and the real verdict separately, under the same correlationId. It read as the
+      // service answering twice, differently. One request, one event.
+      pdpDiagnostics = pdpOutcome.diagnostics;
       const kind = pdpOutcome.diagnostics?.errorKind || "transport";
       const detail = FAILURE_DETAIL[kind] || FAILURE_DETAIL.transport;
 
@@ -238,21 +243,6 @@ export const handleAnalyzeToolExecution = async (req) => {
             reason: `Not authorized: ${detail}. This is a service problem, not a policy decision.`,
             details: { source: "reva-pdp-unavailable", errorKind: kind }
           };
-
-      await appendObservabilityEvent({
-        path: "/analyze-tool-execution",
-        method: "POST",
-        statusCode: 200,
-        authType: authResult.authType || "unknown",
-        correlationId,
-        requestPayload: redactForStorage(payload),
-        response: {
-          errorCode: 5020,
-          message: "Reva PDP evaluation failed.",
-          failOpen: Boolean(REVA_PDP_CONFIG.failOpen),
-          diagnostics: JSON.stringify(summary)
-        }
-      });
     } else {
       policyResult = pdpOutcome.policyResult;
       pdpDiagnostics = pdpOutcome.diagnostics;
