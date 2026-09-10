@@ -17,7 +17,7 @@
   },
   "scripts": {
     "start": "node src/adapters/node/server.mjs",
-    "test": "node --test test/",
+    "test": "node --test",
     "audit": "npm audit --omit=dev --audit-level=low"
   },
   "dependencies": {},
