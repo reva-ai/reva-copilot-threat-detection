@@ -67,8 +67,9 @@ cloned `main` before today is running the old behaviour.
 
 - The Lambda adapter is unit-tested but has **not been exercised on real AWS Lambda**. The
   node adapter is the more travelled path.
-- Reva PDP evaluation has been measured at 2.6–3.0 s with guardrails in enforce mode,
-  against a Copilot budget of roughly 1000 ms, past which Copilot proceeds as if the answer
-  were *allow*. Every event records `latency.budgetExceeded`; a sustained run of those means
-  enforcement is being bypassed by timeout whatever your policies say. This is a property of
-  the PDP, not something this package can fix.
+- Copilot allows this webhook roughly 1000 ms and, past that, proceeds without your
+  decision. Evaluation itself returns comfortably inside that — measured at ~150–250 ms once
+  the container is warm. Two things push a deployment past it: hosting the endpoint far from
+  your Power Platform region (see [INSTALL.md](docs/INSTALL.md)), and running guardrails
+  inline in enforce mode, which costs materially more per call. Every event records
+  `latency.serverBudgetExceeded` and a phase breakdown, so you can see which applies.

@@ -147,7 +147,8 @@ every request records:
 | `callerAppId` | the application whose token we accepted — compare with `ENTRA_ALLOWED_APP_IDS` |
 | `entityResolution` | how each id resolved: `id-map`, `name-map` or `slug` |
 | `payloadShape` | `conversation` and `hops` counts — **they must be equal** |
-| `latency.budgetExceeded` | whether Copilot had already given up before we answered |
+| `latency.serverBudgetExceeded` | whether the decision was too late to count. Host-side: it cannot see the network to Copilot |
+| `latency.gatewayMs` / `coldStart` | time spent before the route ran — cold-start init and queueing |
 | `monitorWouldDeny` | in monitor mode, the denial that was recorded and not enforced |
 | `trimSteps` | what was dropped to stay under the PDP's 1 MiB limit |
 

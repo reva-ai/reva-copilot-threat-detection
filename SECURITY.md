@@ -69,14 +69,19 @@ is no supply chain to compromise in a default install.
 
 ## A limit you should know about
 
-Microsoft allows this webhook roughly **1000 ms** and, past that, proceeds as though the
-answer were *allow*. That behaviour is Microsoft's and cannot be overridden by this plugin.
-If your PDP is slower than the budget, enforcement is bypassed by timeout regardless of what
-the policies say.
+Microsoft allows this webhook roughly **1000 ms** and, past that, proceeds without your
+decision — as *allow* by default, or as a block if the environment's error behavior says so.
+That behaviour is Microsoft's and cannot be overridden from here.
 
-Every event records the handler's end-to-end latency and a `budgetExceeded` flag so you can
-measure this rather than assume it. **Monitor it.** A sustained run of `budgetExceeded: true`
-means you are not actually enforcing.
+Evaluation returns comfortably inside the budget in the default posture — measured at
+~150-250 ms once the container is warm. What puts a deployment at risk is the surrounding
+topology: an endpoint hosted far from the Power Platform region, a cold container, or
+guardrails running inline in enforce mode.
+
+Every event records a phase breakdown and a `serverBudgetExceeded` flag, so this is
+measurable rather than assumed. **Monitor it.** A sustained run of `serverBudgetExceeded:
+true` means decisions are arriving too late to count. Note the flag is host-side: it cannot
+see the network between Copilot and your endpoint, which is why deployment region matters.
 
 ## Hardening checklist
 
@@ -92,7 +97,7 @@ means you are not actually enforcing.
       `CONFIG_API_TOKEN` is a strong random value **and** the routes are restricted at your
       gateway as well
 - [ ] TLS terminated in front of this process; it does not serve HTTPS itself
-- [ ] `budgetExceeded` monitored
+- [ ] `serverBudgetExceeded` monitored
 
 ## Supported versions
 

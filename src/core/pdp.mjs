@@ -47,10 +47,15 @@ export function buildRevaPdpConfigFromEnv(env = process.env) {
     /** When true, enrich reason and embed the PDP's own text in diagnostics. */
     surfacePdpResponse: t("REVA_PDP_SURFACE_RESPONSE") || t("REVA_PDP_PASS_THROUGH"),
     /**
-     * Microsoft's budget is ~1s and it fails OPEN on timeout. Reva measured 2.6-3.0s with
-     * guardrails in ENFORCE mode, so this bound is a real policy choice, not a formality:
-     * too tight denies work the PDP was about to allow, too loose lets Copilot proceed
-     * unauthorized before we answer.
+     * Microsoft's budget is ~1s and it fails OPEN on timeout, so this bound is a real
+     * policy choice rather than a formality: too tight denies work the PDP was about to
+     * allow, too loose lets Copilot proceed unauthorized before we answer.
+     *
+     * Measured against a live deployment, evaluation returns in ~150-250ms warm with
+     * guardrails deferred — the default posture, and comfortably inside the budget. The
+     * default here is generous because of the slow cases, not the normal one: a cold
+     * container, and inline guardrail evaluation in enforce mode, which costs materially
+     * more per call and has been seen at 2.6-3.0s.
      */
     timeoutMs: intEnv(env.REVA_PDP_TIMEOUT_MS, 2500),
     /** Debug only. Fail closed is the default: an unreachable PDP still blocks the turn. */
