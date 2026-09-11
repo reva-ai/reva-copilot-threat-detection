@@ -78,6 +78,10 @@ Full walkthrough — Entra app registration, Power Platform setup, verification,
 AADSTS troubleshooting table — is in **[docs/INSTALL.md](docs/INSTALL.md)**. Every
 configuration variable is in **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)**.
 
+On the Microsoft side: [enabling external threat detection](https://learn.microsoft.com/en-us/microsoft-copilot-studio/external-security-provider) for
+administrators, and [the webhook interface](https://learn.microsoft.com/en-us/microsoft-copilot-studio/external-security-webhooks-interface-developers) this service implements.
+INSTALL.md links the rest.
+
 ## Before you put it in front of real traffic
 
 Three settings decide whether this is actually enforcing anything. All are covered in
@@ -94,10 +98,11 @@ without Entra uses `ALLOW_INSECURE_LOCAL_AUTH` instead.
 evaluates for real, records every would-be denial with the reason, and lets traffic through.
 Switch to `enforce` once that list holds no surprises.
 
-**Watch `budgetExceeded`.** Microsoft allows this webhook about **1000 ms** and, past that,
-proceeds as if the answer were *allow*. That is Microsoft's behaviour and this plugin cannot
-override it. Every event records the end-to-end latency and whether it exceeded the budget —
-a sustained run of exceedances means you are not enforcing, whatever your policies say.
+**Watch `serverBudgetExceeded`.** Microsoft allows this webhook about **1000 ms** and, past
+that, proceeds without your decision. Evaluation returns well inside that — roughly
+150–250 ms warm — so an exceedance usually means the endpoint is hosted far from your Power
+Platform region, or the container was cold. Every event carries a phase breakdown
+(`authMs`, `pdpMs`, `gatewayMs`, `coldStart`) so you can tell which.
 
 ## What it sends, and what it keeps
 

@@ -52,6 +52,28 @@ Two things follow from this shape and cause most of the confusion during setup:
 
 ---
 
+## Microsoft's documentation
+
+This integration implements Microsoft's external threat detection interface. Their pages are
+the authority on the platform side; this guide covers the Reva side and the parts their pages
+leave to the partner.
+
+| Topic | Microsoft page |
+|---|---|
+| Turning the feature on and connecting a provider | [Enable external threat detection and protection](https://learn.microsoft.com/en-us/microsoft-copilot-studio/external-security-provider) |
+| The webhook contract — endpoints, payloads, response shape, the ~1 s budget | [Build a runtime threat detection system](https://learn.microsoft.com/en-us/microsoft-copilot-studio/external-security-webhooks-interface-developers) |
+| Registering the app that authenticates the calls | [Quickstart: register an application](https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app) |
+| Exposing the scope Power Platform requests a token for | [Quickstart: configure an app to expose a web API](https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-configure-app-expose-web-apis) |
+| Federated identity credentials (§4.2) | [Workload identity federation](https://learn.microsoft.com/en-us/entra/workload-id/workload-identity-federation) · [create a trust](https://learn.microsoft.com/en-us/entra/workload-id/workload-identity-federation-create-trust) |
+| Why only generative agents call this webhook | [Orchestrate agent behavior with generative AI](https://learn.microsoft.com/en-us/microsoft-copilot-studio/advanced-generative-actions) |
+| Wider Copilot Studio security posture | [Security and governance](https://learn.microsoft.com/en-us/microsoft-copilot-studio/security-and-governance) · [Power Platform security](https://learn.microsoft.com/en-us/power-platform/admin/security/) |
+
+Two things worth knowing before you start, both from the interface page above: the webhook
+fires **only for tool calls**, and Microsoft treats a missing or late response as *allow*
+unless the environment's error behavior says otherwise.
+
+---
+
 ## 2. Prerequisites
 
 | | Why |
@@ -412,11 +434,16 @@ detection** → select your environment → **Set up**.
 Entra misconfiguration surfaces; §9 decodes the errors.
 
 > **On error behavior.** Microsoft's budget is about one second, and its own default on
-> timeout is to *allow*. Reva evaluations with guardrails in enforce mode can take longer
-> than that. This service already fails closed on its own (it answers `blockAction: true`
-> rather than erroring), so this setting is the backstop for the case where the service
-> itself is unreachable. **Block the query** keeps the whole path fail-closed;
-> **Allow the agent to respond** favours availability over enforcement. Choose deliberately.
+> timeout is to *allow*. Evaluation returns comfortably inside that in the default posture —
+> measured at roughly 150–250 ms once the container is warm. The two things that push a
+> deployment past it are hosting the endpoint far from the Power Platform region (§3) and
+> running Reva guardrails inline in enforce mode, which costs materially more per call.
+>
+> This service already fails closed on its own (it answers `blockAction: true` rather than
+> erroring), so this setting is the backstop for the case where the service itself is
+> unreachable. **Block the query** keeps the whole path fail-closed; **Allow the agent to
+> respond** favours availability over enforcement. Choose deliberately — and see
+> [Microsoft's guidance on connecting a provider](https://learn.microsoft.com/en-us/microsoft-copilot-studio/external-security-provider).
 
 ---
 
@@ -515,5 +542,6 @@ Three that catch people out:
   obtain a token for your audience can drive this webhook.
 - **`REVA_MODE` is `enforce`** when you are ready. A deployment left in `monitor` records
   every denial and permits every one of them.
-- **`budgetExceeded` is monitored.** Microsoft's ~1000 ms budget is not negotiable from
-  here; a sustained run of exceedances means you are not enforcing.
+- **`serverBudgetExceeded` is monitored.** Microsoft's ~1000 ms budget is not negotiable
+  from here. Evaluation fits inside it comfortably; a sustained run of exceedances points at
+  deployment region or cold starts, so read the phase breakdown on the event.

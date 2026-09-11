@@ -133,10 +133,11 @@ failed DNS means the service is down, where retrying only delays an answer you a
 > cut off and — failing closed — blocks legitimate calls. Set it above and Copilot has
 > already given up before you answer.
 >
-> So measure rather than assume. Every event carries the handler's end-to-end latency and
-> `budgetExceeded`. **A sustained run of `budgetExceeded: true` means you are not enforcing**,
-> whatever your policies say. If you see that, the conversation is about PDP latency, not
-> about this variable.
+> So measure rather than assume. Every event carries a phase breakdown — `authMs`, `pdpMs`,
+> `gatewayMs`, `coldStart` — and a `serverBudgetExceeded` flag. **A sustained run of
+> `serverBudgetExceeded: true` means decisions are arriving too late to count.** Read the
+> breakdown before changing this variable: the usual answer is deployment region or cold
+> starts, and neither is fixed by a timeout.
 
 ### Failure diagnosis
 
