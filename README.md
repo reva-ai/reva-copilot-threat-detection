@@ -1,5 +1,3 @@
-<img src="assets/reva.svg" alt="Reva" width="44">
-
 # Reva threat detection for Microsoft Copilot Studio
 
 An **external threat detection provider** for Microsoft Copilot Studio. Copilot calls this
