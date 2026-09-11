@@ -77,7 +77,7 @@ test("the event breaks the response time into phases", async () => {
   try {
     await handleAnalyzeToolExecution(request());
     const [{ latency }] = await listObservabilityEvents(10);
-    for (const field of ["totalMs", "authMs", "pdpMs", "otherMs"]) {
+    for (const field of ["serverTotalMs", "authMs", "pdpMs", "otherMs"]) {
       assert.equal(typeof latency[field], "number", `${field} must be recorded`);
       assert.ok(latency[field] >= 0, `${field} must not be negative, got ${latency[field]}`);
     }
@@ -268,6 +268,92 @@ test("a cold JWKS cache is recorded, and shows up in authMs", async () => {
       second.latency.authMs < first.latency.authMs,
       `warm authMs (${second.latency.authMs}) should be below cold (${first.latency.authMs})`
     );
+  } finally {
+    restore();
+  }
+});
+
+// ── the host's clock ────────────────────────────────────────────────────────
+//
+// serverTotalMs starts inside the route, so it misses cold-start module init and any
+// queueing ahead of it — both firmly inside the deadline Copilot is measuring against. The
+// adapter supplies receivedAtMs, which recovers them.
+//
+// None of this closes the real gap: the client-to-host network is still invisible, and on a
+// deployment far from the Power Platform region it is the larger half. These tests exist so
+// the number stops *claiming* otherwise.
+
+const receivedAgo = (agoMs) => request({ receivedAtMs: Date.now() - agoMs });
+
+test("gatewayMs measures from when the host received the request", async () => {
+  await clearObservabilityEvents();
+  const { handleAnalyzeToolExecution } = await loadRoute(PDP_ENV);
+  const restore = stubFetch(ALLOW);
+  try {
+    await handleAnalyzeToolExecution(receivedAgo(400));
+    const [{ latency }] = await listObservabilityEvents(10);
+    assert.ok(latency.gatewayMs >= 400, `gatewayMs should include the 400ms before us, got ${latency.gatewayMs}`);
+    assert.ok(
+      latency.gatewayMs > latency.serverTotalMs,
+      `gatewayMs (${latency.gatewayMs}) must exceed serverTotalMs (${latency.serverTotalMs})`
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("the budget is judged on the host clock, not the route's", async () => {
+  // The whole point. Time spent before the route was invisible, so a request that blew the
+  // budget in a queue or in cold-start init reported budgetExceeded: false.
+  await clearObservabilityEvents();
+  const { handleAnalyzeToolExecution } = await loadRoute(PDP_ENV);
+  const restore = stubFetch(ALLOW);
+  try {
+    await handleAnalyzeToolExecution(receivedAgo(1500));
+    const [{ latency }] = await listObservabilityEvents(10);
+    assert.ok(latency.serverTotalMs < 1000, "the route itself was fast");
+    assert.equal(latency.serverBudgetExceeded, true, "but the request as a whole was not");
+  } finally {
+    restore();
+  }
+});
+
+test("with no stamp, gatewayMs is null and the budget falls back to the route", async () => {
+  await clearObservabilityEvents();
+  const { handleAnalyzeToolExecution } = await loadRoute(PDP_ENV);
+  const restore = stubFetch(ALLOW);
+  try {
+    await handleAnalyzeToolExecution(request()); // no receivedAtMs
+    const [{ latency }] = await listObservabilityEvents(10);
+    assert.equal(latency.gatewayMs, null);
+    assert.equal(latency.serverBudgetExceeded, latency.serverTotalMs > 1000);
+  } finally {
+    restore();
+  }
+});
+
+test("clock skew is reported as null, never as a negative duration", async () => {
+  await clearObservabilityEvents();
+  const { handleAnalyzeToolExecution } = await loadRoute(PDP_ENV);
+  const restore = stubFetch(ALLOW);
+  try {
+    await handleAnalyzeToolExecution(receivedAgo(-5000)); // host clock 5s ahead
+    const [{ latency }] = await listObservabilityEvents(10);
+    assert.equal(latency.gatewayMs, null);
+  } finally {
+    restore();
+  }
+});
+
+test("a non-numeric stamp does not produce NaN", async () => {
+  await clearObservabilityEvents();
+  const { handleAnalyzeToolExecution } = await loadRoute(PDP_ENV);
+  const restore = stubFetch(ALLOW);
+  try {
+    await handleAnalyzeToolExecution(request({ receivedAtMs: "not-a-number" }));
+    const [{ latency }] = await listObservabilityEvents(10);
+    assert.equal(latency.gatewayMs, null);
+    assert.equal(Number.isNaN(latency.gatewayMs), false);
   } finally {
     restore();
   }

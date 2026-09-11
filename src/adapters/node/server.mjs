@@ -78,6 +78,9 @@ function pathOf(url) {
 
 export function createServer() {
   return http.createServer(async (req, res) => {
+    // Taken before the body is read, so the measured span covers reading it. There is no
+    // gateway in front of this adapter, so this is the closest equivalent to one.
+    const receivedAtMs = Date.now();
     let out;
     try {
       const path = pathOf(req.url || "/");
@@ -96,7 +99,8 @@ export function createServer() {
           method: req.method,
           path,
           headers: req.headers,
-          body
+          body,
+          receivedAtMs
         });
       }
     } catch (err) {

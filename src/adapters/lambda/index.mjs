@@ -21,7 +21,13 @@ export function toRequest(event) {
   const body = event?.isBase64Encoded && event?.body
     ? Buffer.from(event.body, "base64").toString("utf8")
     : event?.body || "";
-  return { method, path: rawPath, headers: event?.headers || {}, body };
+  // When API Gateway received the request, so a route can measure the part of Copilot's
+  // budget that was spent before it was entered — cold-start init and queueing included.
+  // HTTP APIs put it in `timeEpoch`, REST APIs in `requestTimeEpoch`; Function URLs have
+  // `timeEpoch` too. Anything else yields null, and the route reports null rather than zero.
+  const rc = event?.requestContext;
+  const receivedAtMs = rc?.timeEpoch ?? rc?.requestTimeEpoch ?? null;
+  return { method, path: rawPath, headers: event?.headers || {}, body, receivedAtMs };
 }
 
 /** Wrap a route so it presents as a Lambda handler. */

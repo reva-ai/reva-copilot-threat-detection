@@ -224,13 +224,27 @@ test("the Lambda adapter normalises API Gateway events, including base64 bodies"
     body: Buffer.from('{"x":1}').toString("base64"),
     isBase64Encoded: true
   });
-  assert.deepEqual(http, { method: "POST", path: "/analyze-tool-execution", headers: { a: "b" }, body: '{"x":1}' });
+  assert.deepEqual(http, {
+    method: "POST",
+    path: "/analyze-tool-execution",
+    headers: { a: "b" },
+    body: '{"x":1}',
+    receivedAtMs: null
+  });
 
   // REST API events use httpMethod/path instead; both must reduce to the same shape.
   const rest = toRequest({ httpMethod: "GET", path: "/validate", headers: {}, body: null });
   assert.equal(rest.method, "GET");
   assert.equal(rest.path, "/validate");
   assert.equal(rest.body, "");
+
+  // The gateway's receive stamp is carried through so a route can measure the part of the
+  // budget spent before it was entered. HTTP APIs name it timeEpoch, REST APIs
+  // requestTimeEpoch, and an event with neither must yield null rather than 0 or NaN.
+  assert.equal(toRequest({ requestContext: { timeEpoch: 1750000000000 } }).receivedAtMs, 1750000000000);
+  assert.equal(toRequest({ requestContext: { requestTimeEpoch: 1750000000001 } }).receivedAtMs, 1750000000001);
+  assert.equal(toRequest({ requestContext: {} }).receivedAtMs, null);
+  assert.equal(toRequest({}).receivedAtMs, null);
 });
 
 // ── the allowlist is a startup requirement, not a runtime warning ────────────

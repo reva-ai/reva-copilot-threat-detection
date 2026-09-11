@@ -21,6 +21,7 @@ tool call.
 
 | Symptom | Cause | Fix |
 |---|---|---|
+| Copilot shows `securityWebhookBlocked`, but the event log shows **Allow** | The response arrived after Copilot's ~1000 ms budget, and the environment's error behaviour is **Block the query**. `serverBudgetExceeded` is host-side only and cannot see the network, so it reads `false` | [Blocked by Copilot while the log says Allow](#blocked-by-copilot-while-the-log-says-allow) below |
 | Every tool call blocked, reasonCode **103** | The service could not reach, authenticate to, or satisfy the Reva PDP | Read `errorKind` on the observability event: `transport` / `timeout` → check `REVA_PDP_URL` and egress; `auth` → the token is not a **v2** token ([INSTALL §7](INSTALL.md#7-a-note-on-the-reva-token)); `invalid-payload` → the PDP rejected the request body, and its own reason is on the event |
 | One chat blocks every call from some point on, while other chats are fine | A prior turn in `session.messages` had no captured answer, so the PDP rejected the whole request with `400 invalid session: …response…is required` | Handled: unanswered turns are dropped before sending, and a turn answered by a tool call uses the tool result. If you see this, the payload gained a session entry from somewhere else — check `errorKind: invalid-payload` and the PDP's own reason on the event |
 | PDP `401` | v1 token against the v2 endpoint | Issue a v2 token |
@@ -28,6 +29,46 @@ tool call.
 | `400 managed context records are not supported at managed context.<key>` | A record was added to `context` outside the API's allowlist | Records are allowed only for `conversation`, `hops`, `chatHistory`, `environment` and `onBehalfOf`. Everything else must be a flat scalar or a scalar array. The error names the offending key |
 | Tool calls blocked intermittently, `errorKind: upstream-blocked`, `responsePreview` is HTML | A CDN or WAF in front of the PDP rejected the request; it never reached the PDP | See [A WAF in front of the PDP](#a-waf-in-front-of-the-pdp) below. Not a payload problem and not a policy decision — the PDP has no decision-log entry for it at all |
 | A Cedar policy publishes but never fires | Context attribute name mismatch | Cedar matches keys exactly and a missing key is not an error — it fails the `has` guard. Check `REVA_CONTEXT_ATTR_PREFIX` against your store |
+
+## Blocked by Copilot while the log says Allow
+
+**Symptom.** Copilot shows `securityWebhookBlocked` — *"This message was blocked by threat
+detection tools configured by your admin"* — but the observability event for the same
+conversation records **Allow**, a short `serverTotalMs`, and `serverBudgetExceeded: false`.
+
+Match the `Conversation Id` in Copilot's error against
+`requestPayload.conversationMetadata.conversationId` on the event. If they match and the event
+says Allow, the decision was fine and the *delivery* was not.
+
+**Cause.** The answer arrived after Copilot's ~1000 ms budget. What happens then is set by
+**Set error behavior** in the Power Platform admin center: the documented default is to
+proceed as if you had answered *allow*, but an environment set to **Block the query** refuses
+instead — so being slow looks exactly like a policy denial.
+
+`serverBudgetExceeded` is measured host-side. It covers the route, and with `gatewayMs` it
+covers cold-start init and queueing too — but it cannot see the network between Copilot and
+your endpoint, which on a distant deployment is the larger half.
+
+**Confirming it.** Time the round trip from a machine near the Power Platform region:
+
+```bash
+curl -s -o /dev/null -X POST "https://<your endpoint>/analyze-tool-execution?api-version=2025-05-01" \
+  -w "connect %{time_connect}s  tls %{time_appconnect}s  ttfb %{time_starttransfer}s  total %{time_total}s\n"
+```
+
+A 401 is fine — the timings are the point. If `time_appconnect` alone is a large fraction of a
+second, TLS is terminating far from the caller and most of the budget is gone before your
+service is reached. One measured example, an Indian Power Platform region against a
+`us-east-1` gateway: connect ~230 ms, TLS ~240 ms more, **760–875 ms for a complete round trip
+with no application work at all.**
+
+**Fix.** Deploy in the region nearest the Power Platform environment, or put a CDN with edge
+TLS termination in front so the handshake completes near the caller. See
+[INSTALL.md](INSTALL.md).
+
+Switching the error behaviour to *"Allow the agent to respond"* stops the blocks, but it does
+so by not enforcing whenever the service is slow. That is a fail-open choice, worth making
+deliberately rather than as a workaround.
 
 ## A WAF in front of the PDP
 
