@@ -85,6 +85,33 @@ Only two routes need to be publicly reachable, because they are the two Microsof
 
 Everything else is off unless you switch it on, and returns `404` while off.
 
+### Deploy it near the Power Platform environment
+
+**This is a latency requirement, not a preference.** Copilot allows this webhook about
+1000 ms, and on a distant deployment most of that is spent on the network before your code
+runs at all.
+
+Measured from an Indian Power Platform region against a `us-east-1` API Gateway, on a
+connection that was not already open:
+
+| | |
+|---|---|
+| DNS | ~3 ms |
+| TCP connect | ~230 ms |
+| TLS handshake | ~240 ms more |
+| **Total before the request body is sent** | **~470 ms** |
+| Round trip, no application work at all | **760–875 ms** |
+
+That leaves under 250 ms for authentication, the PDP call and the response — which is not
+enough, so requests intermittently exceed the budget. What happens then depends on the error
+behaviour set in the Power Platform admin center: the documented default is to proceed as if
+you had answered *allow*, but an environment set to **Block the query** refuses instead, and
+the user sees `securityWebhookBlocked` on calls your own event log records as allowed.
+
+Deploy in the region closest to the Power Platform environment. If you cannot, put a CDN with
+edge TLS termination in front of the endpoint so the handshake completes near the caller
+rather than across an ocean.
+
 ### Option A — any Node host (recommended)
 
 Azure App Service, Azure Container Apps, ECS or Fargate, Kubernetes, a VM, on-prem:

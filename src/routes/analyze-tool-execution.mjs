@@ -35,11 +35,21 @@ const EVALUATE_COPILOT_TOPICS =
 /**
  * Microsoft's documented budget for this webhook, and it is not a soft one: "If your system
  * doesn't respond in time, the agent behaves as if your response is 'allow', invoking the
- * tool." Exceeding it does not slow enforcement down, it removes it.
+ * tool." Newer Power Platform environments can invert that with an error behaviour of
+ * "Block the query", which turns being slow into a refusal instead. Either way, exceeding
+ * the budget replaces the decision this service made with one it did not.
  *
  * Not a timeout — nothing here aborts at 1000 ms, because a PDP that answers at 1200 ms is
  * still worth waiting for on the calls where Copilot has not yet given up. It is a marker,
  * so the event log can answer "how often are we too late to matter?"
+ *
+ * WHAT THE MARKER CANNOT SEE. Everything measured here is server-side. The client-to-gateway
+ * network is not, and on a distant deployment it is the larger half: measured from an Indian
+ * Power Platform region against a us-east-1 gateway, a fresh connection spent 760-875 ms on
+ * DNS, TCP and TLS before the request body was even sent. A `serverBudgetExceeded: false`
+ * event is therefore not evidence that Copilot got its answer in time, and one was observed
+ * being blocked for slowness while this said the call was comfortably inside budget. Deploy
+ * near the Power Platform region; see INSTALL.md.
  */
 const COPILOT_BUDGET_MS = 1000;
 
@@ -102,6 +112,28 @@ function normalizeAnalyzePayload(payload) {
   };
 }
 
+/**
+ * How long ago the host received this request.
+ *
+ * `startedMs` is taken inside this route, which misses two things that are firmly inside the
+ * deadline Copilot is measuring against: the cold-start module init (imports, createAuth,
+ * config parsing — all before the route is entered) and any queueing in front of it. On a
+ * cold container that is not a rounding error.
+ *
+ * The adapter supplies `receivedAtMs`, which recovers both. It stays host-agnostic on
+ * purpose: the Lambda adapter reads API Gateway's stamp, the node adapter takes it when the
+ * request arrives, and a route called directly — as tests do — simply has none. Absent means
+ * null rather than a guess.
+ *
+ * Two clocks can be involved, so a small negative is possible under skew. That is reported as
+ * null too: an impossible number in a latency field is worse than an absent one.
+ */
+function gatewayElapsedMs(req) {
+  const receivedAt = req?.receivedAtMs;
+  if (!Number.isFinite(receivedAt)) return null;
+  const elapsed = Date.now() - receivedAt;
+  return elapsed >= 0 ? elapsed : null;
+}
 /**
  * True until the first invocation on this container answers.
  *
@@ -317,19 +349,24 @@ export const handleAnalyzeToolExecution = async (req) => {
     // waiting and invokes the tool anyway. A run of `budgetExceeded: true` means the
     // enforcement point is being bypassed by timeout, whatever the decisions say.
     latency: (() => {
-      const totalMs = Date.now() - startedMs;
+      const serverTotalMs = Date.now() - startedMs;
       const pdpMs = pdpDiagnostics?.latencyMs ?? null;
       // Whatever the two named legs do not account for: body parse, redaction, and on the
-      // fallback path the config read. Derived rather than measured so the parts always sum
-      // to the total and nothing can hide between them.
-      const otherMs = totalMs - (authMs ?? 0) - (pdpMs ?? 0);
+      // fallback path the config read. Derived rather than measured, so nothing hides
+      // between them — but see the note above about what it cannot see.
+      const otherMs = serverTotalMs - (authMs ?? 0) - (pdpMs ?? 0);
+      const gatewayMs = gatewayElapsedMs(req);
+      // Judged on the gateway clock when we have one, because it is the closer of the two
+      // to what Copilot is actually timing.
+      const budgetBasisMs = gatewayMs ?? serverTotalMs;
       return {
-        totalMs,
-        budgetMs: COPILOT_BUDGET_MS,
-        budgetExceeded: totalMs > COPILOT_BUDGET_MS,
+        gatewayMs,
+        serverTotalMs,
         authMs,
         pdpMs,
         otherMs,
+        budgetMs: COPILOT_BUDGET_MS,
+        serverBudgetExceeded: budgetBasisMs > COPILOT_BUDGET_MS,
         // The two that turn "probably a cold start" into a fact.
         coldStart: wasColdStart,
         jwksFetched
